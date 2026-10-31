@@ -1,0 +1,9 @@
+node_modules/
+# 元の肖像画（PNG、約150MB）は入れない。ゲームに使う縮小版は src/data/portraits.ts に埋め込み済み
+assets/portraits/*
+!assets/portraits/mapping.csv
+# 配布物は dist/index.html のみ（sengoku1560.html は埋め込み用の断片）
+dist/sengoku1560.html
+*.zip
+undefined/
+shots/

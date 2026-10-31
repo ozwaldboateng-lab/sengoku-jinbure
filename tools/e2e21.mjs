@@ -1,0 +1,34 @@
+// 家臣団の並べ替え: 見出しを押すと昇順・降順が切り替わる
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { chromium } = require('/opt/node-tools/node_modules/playwright');
+const out = process.argv[2];
+const mobile = process.argv[3] === 'mobile';
+const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const p = await b.newPage({ viewport: mobile ? { width: 390, height: 844 } : { width: 1360, height: 820 } });
+const errors = [];
+p.on('pageerror', (e) => errors.push('pageerror ' + e.message));
+p.on('console', (m) => { if (m.type() === 'error') errors.push('console ' + m.text()); });
+await p.goto('file://' + process.cwd() + '/dist/index.html');
+await p.waitForTimeout(400);
+await p.click('[data-act="t-new"]'); await p.click('[data-act="pick-scen"][data-id="1560"]'); await p.click('[data-act="pick-clan"][data-id="oda"]');
+await p.click('[data-act="start"]'); await p.waitForTimeout(300);
+await p.keyboard.press('3'); await p.click('[data-act="stab"][data-id="vassals"]'); await p.waitForTimeout(150);
+const col = (k) => p.evaluate((k) => [...document.querySelectorAll('#modal tbody tr')].map((tr) => tr.children[k].textContent.trim()), k);
+const nums = (a) => a.map((x) => parseInt(x, 10));
+const sorted = (a, d) => a.every((x, i) => i === 0 || (d < 0 ? a[i - 1] >= x : a[i - 1] <= x));
+await p.click('[data-act="vsort"][data-id="bra"]'); await p.waitForTimeout(100);
+const braDesc = sorted(nums(await col(4)), -1);
+await p.click('[data-act="vsort"][data-id="bra"]'); await p.waitForTimeout(100);
+const braAsc = sorted(nums(await col(4)), 1);
+await p.click('[data-act="vsort"][data-id="cha"]'); await p.waitForTimeout(100);
+const chaDesc = sorted(nums(await col(7)), -1);
+await p.click('[data-act="vsort"][data-id="loc"]'); await p.waitForTimeout(100);
+const locs = await col(10);
+const locAsc = locs.every((x, i) => i === 0 || x === locs[i - 1] || !locs.slice(0, i - 1).includes(x)); // 同じ所在がまとまる
+await p.screenshot({ path: `${out}/210-vassal-sort${mobile ? '-m' : ''}.png` });
+await p.click('[data-act="vsort"][data-id=""]'); await p.waitForTimeout(100);
+const reset = await p.evaluate(() => !document.querySelector('.th-sort.on'));
+const sw = await p.evaluate(() => document.documentElement.scrollWidth);
+console.log({ mobile, braDesc, braAsc, chaDesc, locAsc, reset, sw, errors: errors.length ? errors : 'none' });
+await b.close();

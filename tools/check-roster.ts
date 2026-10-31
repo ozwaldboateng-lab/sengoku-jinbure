@@ -1,0 +1,14 @@
+import { GENERALS, CLANS } from '../src/data/roster';
+import { CASTLE_DEFS } from '../src/engine/map';
+import { newGame } from '../src/engine/setup';
+const owner = new Map(CASTLE_DEFS.map((c) => [c.id, c.owner]));
+const bad = GENERALS.filter(([, , clan, , , , , loc]) => !owner.has(loc) || (clan && owner.get(loc) !== clan));
+console.log('城と所属の不一致', bad.map((g) => `${g[1]}@${g[7]}(${owner.get(g[7])})`));
+const statBad = GENERALS.filter((g) => g.slice(3, 7).some((v) => typeof v !== 'number' || v < 1 || v > 100));
+console.log('能力値の範囲外', statBad.map((g) => g[1]));
+const per: Record<string, number> = {};
+for (const g of GENERALS) if (g[2]) per[g[2]] = (per[g[2]] || 0) + 1;
+console.log('武将1人の家', CLANS.filter((c) => (per[c.id] || 0) <= 1).map((c) => c.name).join(' '));
+const s = newGame('oda', 'normal', 1);
+console.log('在野', Object.values(s.generals).filter((g) => g.status === 'ronin').map((g) => `${g.name}@${s.castles[g.loc].name}`).join(' '));
+console.log('総数', Object.keys(s.generals).length, '軍団', Object.keys(s.armies).length);

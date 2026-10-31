@@ -1,0 +1,27 @@
+// 武将の詳細（情報の表から開く・略歴・戻る・敵将の能力は伏せる）
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { chromium } = require('/opt/node-tools/node_modules/playwright');
+const out = process.argv[2];
+const mobile = process.argv[3] === 'mobile';
+const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const p = await b.newPage({ viewport: mobile ? { width: 390, height: 844 } : { width: 1360, height: 820 } });
+const errors = [];
+p.on('pageerror', (e) => errors.push('pageerror ' + e.message));
+p.on('console', (m) => { if (m.type() === 'error') errors.push('console ' + m.text()); });
+await p.goto('file://' + process.cwd() + '/dist/index.html');
+await p.waitForTimeout(400);
+await p.click('[data-act="t-new"]'); await p.click('[data-act="pick-scen"][data-id="1560"]'); await p.click('[data-act="pick-clan"][data-id="oda"]');
+await p.click('[data-act="start"]'); await p.waitForTimeout(300);
+await p.keyboard.press('3'); await p.click('[data-act="stab"][data-id="vassals"]'); await p.waitForTimeout(100);
+await p.click('[data-act="gen"][data-id="shibata_katsuie"]'); await p.waitForTimeout(150);
+await p.screenshot({ path: `${out}/170-gen-shibata${mobile ? '-m' : ''}.png` });
+const shibata = await p.evaluate(() => ({ title: document.getElementById('modal-title').textContent, lede: document.querySelector('.gdetail .lede').textContent, stats: [...document.querySelectorAll('.gstat')].map((x) => x.textContent).join(' '), bio: document.querySelector('.bio').textContent.slice(0, 40) }));
+await p.click('[data-act="gen-back"]'); await p.waitForTimeout(100);
+const back = await p.evaluate(() => document.querySelector('[data-act="stab"][aria-selected="true"]')?.dataset.id);
+await p.click('[data-act="mtab"][data-id="gaiko"]'); await p.click('[data-act="stab"][data-id="gaike"]'); await p.waitForTimeout(100);
+await p.click('[data-act="gen"][data-id="takeda_shingen"]'); await p.waitForTimeout(150);
+await p.screenshot({ path: `${out}/171-gen-shingen${mobile ? '-m' : ''}.png` });
+const shingen = await p.evaluate(() => ({ stats: [...document.querySelectorAll('.gstat')].map((x) => x.textContent).join(' '), bio: document.querySelector('.bio').textContent.slice(0, 20) }));
+console.log({ mobile, shibata, back, shingen, errors: errors.length ? errors : 'none' });
+await b.close();
