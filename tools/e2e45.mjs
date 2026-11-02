@@ -18,8 +18,11 @@ const opt = await p.$eval('#sel-ninja-target option:nth-child(2)', (o) => o.valu
 let rumor = null;
 if (opt) { await p.selectOption('#sel-ninja-target', opt); await p.waitForTimeout(200); const btn = await p.$eval('[data-act="ninja-do"]', (b) => ({ text: b.textContent, disabled: b.disabled })); await p.screenshot({ path: `${out}/490-tokusei${mobile ? '-m' : ''}.png`, fullPage: mobile }); await p.click('[data-act="ninja-do"]'); await p.waitForTimeout(200); rumor = { btn, log: await p.evaluate(() => window.__sengoku.state.log.slice(-1)[0].text) }; }
 // 茶会と普請
-await p.click('[data-act="tea-do"]').catch(() => {}); await p.waitForTimeout(200);
+await p.click('[data-act="tea-do"]').catch(() => {}); await p.waitForTimeout(300);
 const tea = await p.evaluate(() => window.__sengoku.state.log.slice(-1)[0].text);
+// 茶会の場面を閉じて、特性の画面に戻る
+if (await p.$('#scene:not([hidden])')) { await p.click('#scene [data-sact="skip"]'); await p.waitForTimeout(200); }
+await p.keyboard.press('3'); await p.click('[data-act="stab"][data-id="tokusei"]'); await p.waitForTimeout(200);
 const fbtn = await p.$('[data-act="fushin"]:not([disabled])');
 let fushin = null; if (fbtn) { await fbtn.click(); await p.waitForTimeout(200); fushin = await p.evaluate(() => window.__sengoku.state.log.slice(-1)[0].text); }
 // 武将の詳細の特性の札

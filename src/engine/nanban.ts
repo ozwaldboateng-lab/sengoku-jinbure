@@ -55,6 +55,7 @@ function arrive(s: GameState) {
     const o = portOwner(s, pick.id);
     addLog(s, `南蛮船が${portName(pick.id)}に来航した${o ? `（${clanName(s, o)}家）` : ''}。${o === s.player ? '南蛮市が開いた（商い）。' : ''}`, 'econ', o === s.player);
     if (o === s.player) (s.scenes ??= []).push(envoyLine(s, 'shipArrive', { id: 'capitan', name: '南蛮船のカピタン' }, { port: portName(pick.id) }));
+    if (o === s.player && !s.clans[o].shipSeen) { s.clans[o].shipSeen = true; (s.events ??= []).push({ kind: 'ship', port: pick.id }); } // 初めての来航だけ場面に
   }
 }
 
@@ -208,6 +209,7 @@ function monthMissions(s: GameState) {
     C.missionAsked = s.turn;
     if (C.id === s.player) {
       s.missionVisit = { mis: id, turn: s.turn };
+      (s.events ??= []).push({ kind: 'mission', mis: id });
       addLog(s, `宣教師${name}が布教の許しを願い出てきた。`, 'info', true);
       continue;
     }

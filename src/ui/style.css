@@ -629,3 +629,13 @@ details.reg > .tbl-wrap { margin: 0 8px 8px; }
   .op-scen { font-size: 17px; }
   .op-skip { font-size: 16px; }
 }
+/* ゲームの途中の場面（茶会など）: 地図の上に暗い幕と語りの札 */
+#scene { position: fixed; inset: 0; z-index: 25; color: var(--paper); }
+#scene .scene-veil { position: absolute; inset: 0; background: radial-gradient(ellipse at 58% 38%, rgba(8, 8, 9, 0.15) 20%, rgba(8, 8, 9, 0.78) 90%); }
+#scene .op-top { z-index: 1; }
+#scene .op-box { z-index: 1; }
+/* 場面のあいだは、上の帯・右の欄・地図の道具を隠し、地図を画面いっぱいに暗く映す */
+body.in-scene .bar, body.in-scene .side, body.in-scene .mapctl, body.in-scene .mapmode, body.in-scene .mapbase, body.in-scene .legend, body.in-scene #toast { display: none !important; }
+body.in-scene .stage { grid-template-columns: minmax(0, 1fr); }
+body.in-scene .mapwrap { height: 100vh; height: 100dvh; }
+body.in-scene #map { filter: saturate(0.75) brightness(0.72) sepia(0.15); pointer-events: none; }

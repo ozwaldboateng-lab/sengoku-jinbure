@@ -50,13 +50,17 @@ export function teaBlock(s: GameState, host: General | undefined): string | null
   if (s.clans[s.player].gold < TEA_COST) return `金${TEA_COST}貫が要る`;
   return null;
 }
+// 武将が持つ茶器の格（なければ0）
+export const teaGrade = (s: GameState, g: General | undefined) => (g?.tea && s.items?.[g.tea]?.kind === 'tea' ? s.items[g.tea].grade : 0);
 export function teaCeremony(s: GameState, host: General): General[] {
   if (teaBlock(s, host)) return [];
   const C = s.clans[s.player];
   C.gold -= TEA_COST; C.teaTurn = s.turn;
   const guests = Object.values(s.generals).filter((g) => g.clan === s.player && g.id !== host.id && g.id !== C.leader && g.status !== 'young' && g.status !== 'captive' && g.status !== 'dead')
     .sort((a, b) => (a.on ?? R.ON_START) - (b.on ?? R.ON_START)).slice(0, TEA_GUESTS);
-  for (const g of guests) g.on = Math.min(100, (g.on ?? R.ON_START) + TEA_ON);
+  // 名物の茶器: 亭主が持てば客の全員に格の分、客が自分の茶器を持参すればその客にさらに格の分
+  const hostGrade = teaGrade(s, host);
+  for (const g of guests) g.on = Math.min(100, (g.on ?? R.ON_START) + TEA_ON + hostGrade + teaGrade(s, g));
   addLog(s, `${host.name}が茶会を開き、${guests.map((g) => g.name).join('・')}をもてなした。`, 'info', true);
   return guests;
 }

@@ -104,6 +104,7 @@ export interface Clan {
   wonTurn?: number; foughtTurn?: number; // 使番の功績判定用
   gold: number; guns: number; // 金（貫）と蔵の鉄砲
   tax?: 'low' | 'mid' | 'high'; // 年貢の率
+  shipSeen?: boolean; // 南蛮船が当家の港に来たことがある
   budget: { chisui: number; hodo: number }; // 毎月の収入から治水・施しに回す割合（%）
   focus?: number | null; // 予算を優先する城
   delegate?: { budget: boolean; trade: boolean; staff: boolean; court: boolean; military?: boolean }; // 委任（プレイヤー）。military は直轄も含む全軍
@@ -182,7 +183,19 @@ export interface GameState {
   kanOffer?: { gen: string; from: string; turn: number } | null; // 家臣に外から官の誘い（許すか咎めるか）
   returnOffer?: { gen: string; turn: number } | null; // 追放した者が勝手に戦に加わって帰参を願う
   quarrel?: { gen: string; victim: string; killed: boolean; turn: number } | null; // 家臣の喧嘩の裁き
+  events?: BigEvent[]; // 月の終わりに場面で見せる大きな出来事（家督相続・滅亡・降伏・謀反）。評定終了ごとに空にする
   scenes?: import('./lines').SceneLine[]; // 月の報告に出す顔見せ（評定終了ごとに空にする）
   missions?: Record<string, { home: string | null; next: number }>; // 宣教師: 身を寄せる家と次に動くターン
   missionVisit?: { mis: string; turn: number } | null; // プレイヤーへの布教の願い出
 }
+
+// 場面で見せる大きな出来事（当家に関わるものだけ）
+export type BigEvent =
+  | { kind: 'katoku'; clan: string; old: string | null; heir: string; will: string | null; regent: string | null; young: boolean }
+  | { kind: 'ruin'; clan: string; name: string; leader: string | null; castle: string }
+  | { kind: 'surrender'; clan: string; name: string; leader: string | null; castles: number; baishin: number; seat: string | null }
+  | { kind: 'rebel'; leader: string; clan: string; name: string; castles: number; seat: string | null; why: 'rebel' | 'odoso'; heir?: string }
+  | { kind: 'ikki'; castle: string; troops: number; clan: string }
+  | { kind: 'treaty'; treaty: 'alliance' | 'marriage'; other: string }
+  | { kind: 'ship'; port: string }
+  | { kind: 'mission'; mis: string };

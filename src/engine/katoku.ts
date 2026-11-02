@@ -33,6 +33,7 @@ export function afterSuccession(s: GameState, C: Clan, prev: General | null, pic
   // 後見役: 指名がなければ（AIも）魅力の高い宿老・一門
   const regent = regentOf(s, C) ?? Object.values(s.generals).filter((g) => usable(s, g, C.id) && g.status !== 'young' && g.id !== pick.id && (g.kin || g.rank === 0)).sort((a, b) => b.cha - a.cha)[0];
   C.regent = undefined;
+  if (C.id === s.player) (s.events ??= []).push({ kind: 'katoku', clan: C.id, old: prev?.id ?? null, heir: pick.id, will: designated && C.will ? C.will : null, regent: regent?.id ?? null, young: pick.genpuku !== undefined || (pick.born !== undefined && s.year - pick.born < 18) });
   // お家騒動: 跡継ぎが幼いか頼りなく、はるかに人望のある一門がいる
   const weak = pick.genpuku !== undefined || (pick.born !== undefined && s.year - pick.born < 18) || worth(pick) < 110;
   if (!weak) return;
@@ -45,5 +46,7 @@ export function afterSuccession(s: GameState, C: Clan, prev: General | null, pic
   const armies = clanArmies(s, C.id).filter((a) => a.main === rival.id);
   if (C.id === s.player) pushScene(s, rival, 'rebel');
   addLog(s, `${C.name}家でお家騒動。${rival.name}が${pick.name}の家督を認めない。`, 'death', C.id === s.player);
-  splitClan(s, rival, C.id, castles, armies, 'お家騒動で家を割った');
+  const seat = s.castles[castles[0]]?.id ?? null;
+  const nid = splitClan(s, rival, C.id, castles, armies, 'お家騒動で家を割った');
+  if (C.id === s.player) (s.events ??= []).push({ kind: 'rebel', leader: rival.id, clan: nid ?? '', name: nid ? s.clans[nid].name : '', castles: castles.length, seat, why: 'odoso', heir: pick.id });
 }

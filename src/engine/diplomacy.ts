@@ -105,6 +105,7 @@ export function sign(s: GameState, a: string, b: string, kind: 'alliance' | 'mar
   if (old) s.treaties = s.treaties.filter((t) => t !== old);
   const t: Treaty = { a, b, kind, start: kind === 'marriage' && old ? old.start : s.turn, until: kind === 'marriage' ? null : s.turn + DIP.ALLIANCE_MONTHS };
   s.treaties.push(t);
+  if (a === s.player || b === s.player) (s.events ??= []).push({ kind: 'treaty', treaty: kind, other: a === s.player ? b : a });
   if (kind === 'marriage') for (const c of [a, b]) s.clans[c].prestige = Math.min(100, s.clans[c].prestige + DIP.MARRIAGE_PRESTIGE);
   if (s.clans[a].target === b) s.clans[a].target = null;
   if (s.clans[b].target === a) s.clans[b].target = null;
@@ -138,6 +139,7 @@ export function absorb(s: GameState, winner: string, loser: string) {
   // 当家に降った家は本領安堵: 当主が城持ちに、家臣はその陪臣に、蔵の兵糧と金は領の蔵に（鉄砲は当家の蔵へ）
   const f = toPlayer ? enfeoffSurrendered(s, loser, castles, gens, got, leaderId) : null;
   if (toPlayer && !f) { W.food += got.food; W.gold += got.gold; }
+  if (toPlayer) (s.events ??= []).push({ kind: 'surrender', clan: loser, name: L.name, leader: leaderId, castles: castles.length, baishin: f ? Object.values(s.generals).filter((g) => g.liege === f.leader).length : 0, seat: f?.seat !== undefined ? s.castles[f.seat].id : castles.length ? s.castles[castles[0]].id : null });
   addLog(s, f ? `${L.name}家の鉄砲${got.guns.toLocaleString()}丁を当家の蔵に収めた（兵糧と金は${L.name}家の領の蔵に残る）。` : `${L.name}家の蔵を接収した（兵糧${got.food.toLocaleString()}石・金${got.gold.toLocaleString()}貫・鉄砲${got.guns.toLocaleString()}丁）。`, 'econ', toPlayer);
   L.leader = null;
   eliminateClan(s, loser, winner); // 城・軍団はもう移っているので、勢力だけが消える

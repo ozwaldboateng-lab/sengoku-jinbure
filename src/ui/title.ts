@@ -1,3 +1,4 @@
+import { sfx } from './sound';
 // タイトル画面「陣触 ― 戦国群雄記」: 最初の画面 → 時代を選ぶ → 家を選ぶ（地図の上で）。遊び方もここから読める
 import { blurbOf, ERA_NAME } from '../data/blurbs';
 import { FEATURED } from '../data/roster';
@@ -218,6 +219,7 @@ const opSeen = new Set<string>(); // この画面で見た序幕（家選びか�
 const opBeats = () => OPENINGS[scen] ?? [];
 function startOpening() {
   opIdx = 0;
+  sfx('clap');
   screen = 'opening';
   $('title').dataset.screen = 'opening';
   view!.resize();
@@ -227,6 +229,7 @@ function startOpening() {
 function nextBeat() {
   if (opIdx >= opBeats().length - 1) { endOpening(); return; }
   opIdx++; applyBeat(false); render();
+  if (opBeats()[opIdx]?.who) sfx('ponn');
 }
 // 序幕が終わったら家選びへ
 function endOpening() {

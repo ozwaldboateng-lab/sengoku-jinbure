@@ -27,6 +27,7 @@ export async function endTurn(s: GameState) {
   if (s.over) return;
   s.reports = [];
   s.scenes = [];
+  s.events = [];
   // プレイヤーの出陣命令をここでまとめて開戦（一揆勢は自ら動く）
   // 決めずにいた仕置: 方面の城は軍団長が、軍事を委任していれば当主の気性で、ほかは撫育
   settleShioki(s, (c) => {

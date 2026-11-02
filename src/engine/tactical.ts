@@ -709,7 +709,11 @@ function deathRoll(t: Tactical, s: GameState, u: TUnit, p: number) {
   }
 }
 
+// 画面側が音を鳴らすための口（行動の種類と突撃か）
+let onAction: ((kind: TAction['kind'], charge: boolean) => void) | null = null;
+export function setTacticalSound(f: typeof onAction) { onAction = f; }
 export function doAction(t: Tactical, s: GameState, u: TUnit, a: TAction, charge = false): string {
+  onAction?.(a.kind, charge);
   u.acted = true; u.moved = true;
   // 伏せた状態からの攻撃は伏兵の一撃になる（それ以外の行動は姿を現すだけ）
   const amb = !!u.hidden && (a.kind === 'attack' || a.kind === 'shoot' || a.kind === 'bow');

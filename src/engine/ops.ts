@@ -146,7 +146,10 @@ export function captureCastle(s: GameState, c: Castle, clan: string) {
   addLog(s, `${clanName(s, clan)}家が${c.name}を攻略（旧${clanName(s, old)}）。`, 'castle', clan === s.player || old === s.player);
   onCaptured(s, c, old);
   onCastleTaken(s, c, old, clan);
-  if (old && !clanCastles(s, old).length) eliminateClan(s, old, clan);
+  if (old && !clanCastles(s, old).length) {
+    if (clan === s.player && old !== s.player) (s.events ??= []).push({ kind: 'ruin', clan: old, name: s.clans[old].name, leader: s.clans[old].leader, castle: c.id });
+    eliminateClan(s, old, clan);
+  }
   checkVictory(s);
 }
 

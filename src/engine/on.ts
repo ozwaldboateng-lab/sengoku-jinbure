@@ -173,5 +173,7 @@ export function rebelFront(s: GameState, f: Front) {
   pushScene(s, g, 'rebel');
   const armies = clanArmies(s, from).filter((x) => x.front === f.id);
   s.fronts = (s.fronts ?? []).filter((x) => x !== f);
-  splitClan(s, g, from, [...f.castles], armies, '謀反');
+  const seat = f.seat !== undefined ? s.castles[f.seat].id : null, n = f.castles.length;
+  const id = splitClan(s, g, from, [...f.castles], armies, '謀反');
+  (s.events ??= []).push({ kind: 'rebel', leader: g.id, clan: id ?? '', name: id ? s.clans[id].name : '', castles: n, seat, why: 'rebel' });
 }

@@ -36,6 +36,7 @@ export function raiseIkki(s: GameState, clan: string, c: Castle): Army | null {
   s.armies[a.id] = a;
   s.generals[gid].army = a.id;
   addLog(s, `${c.name}の領内で門徒が蜂起した（一向一揆 ${troops.toLocaleString()}人）。`, 'battle', c.owner === s.player || clan === s.player);
+  if (c.owner === s.player) (s.events ??= []).push({ kind: 'ikki', castle: c.id, troops, clan });
   orderAttack(s, a, c.hex, false);
   return a;
 }

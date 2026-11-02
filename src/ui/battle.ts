@@ -1,3 +1,6 @@
+import { mood, sfx } from './sound';
+import { setTacticalSound } from '../engine/tactical';
+setTacticalSound((kind, charge) => sfx(kind === 'shoot' ? 'gun' : kind === 'attack' ? (charge ? 'charge' : 'clash') : kind === 'gate' ? 'gate' : kind === 'fire' ? 'fire' : kind === 'bow' ? 'tick' : 'tick'));
 // 合戦画面: 戦術ヘックスで部隊を操作する
 import { applyTactical } from '../engine/combat';
 import type { Target } from '../engine/move';
@@ -519,6 +522,7 @@ let finish: ((r: BattleReport) => void) | null = null;
 
 export function openBattle(s: GameState, a: Army, target: Target, joined: Army[] = []): Promise<BattleReport> {
   const playerSide = a.clan === s.player ? 'A' : 'D';
+  mood('battle'); sfx('horn');
   gs = s;
   tac = createTactical(s, a, target, playerSide, joined);
   sel = null; pending = null; delegateQueued = false;
@@ -734,6 +738,7 @@ function showResult() {
   const t = tac!, s = gs!;
   const won = t.over === t.playerSide;
   const draw = t.over === 'draw';
+  sfx(won ? 'win' : draw ? 'clap' : 'lose');
   const siegeGoesOn = draw && t.kind === 'siege' && t.playerSide === 'A';
   const defending = draw && t.kind === 'siege' && t.playerSide === 'D';
   const sum = (side: 'A' | 'D', start: boolean) => t.units.filter((u) => u.side === side).reduce((x, u) => x + (start ? t.start[u.id] : u.troops), 0);

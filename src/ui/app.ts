@@ -8,15 +8,19 @@ import * as R from '../engine/rules';
 import { migrateMap, newGame } from '../engine/setup';
 import { newKarairiGame, S1592 } from '../engine/s1592';
 import { fillArmy, fillBlock, reshuffleAt } from '../engine/reorg';
-import { FUSHIN_COST, fushin, fushinBlock, genHex, govTrait, NINJA_COST, NINJA_NAME, NINJA_RANGE, ninjaBlock, ninjaChance, ninjaDo, ninjaHead, ninjaReach, setNinjaHead, TEA_COST, TEA_GUESTS, TEA_ON, teaBlock, teaCeremony, traitName, traitOf, type NinjaAct } from '../engine/traits';
+import { FUSHIN_COST, fushin, fushinBlock, genHex, govTrait, NINJA_COST, NINJA_NAME, NINJA_RANGE, ninjaBlock, ninjaChance, ninjaDo, ninjaHead, ninjaReach, setNinjaHead, TEA_COST, TEA_GUESTS, TEA_ON, teaBlock, teaCeremony, teaGrade, traitName, traitOf, type NinjaAct } from '../engine/traits';
 import { TRAIT_NOTE } from '../data/traits';
 import { FACE_ON, mergeArmies, mergeBlock, mergeLeaders, mergePreview, RIVAL_ON, splitArmy, splitBlock } from '../engine/reorg';
 import {
   addLog, hostile, armyCombat, armyStats, ashiOf, clanAshi, drillOf, castleAt, castleKoku, clanArmies, clanCapacity, clanCastles, clanKoku, clanName, clanTroops, clanUpkeep,
   castleDef, dateLabel, garrisonMax, treatyOf, hexOwner, initialMorale, maxTroops, occupancy, troopMult,
 } from '../engine/state';
-import type { Army, BattleReport, Castle, Front, GameState, General, Item } from '../engine/types';
+import type { Army, BattleReport, BigEvent, Castle, Front, GameState, General, Item } from '../engine/types';
 import { openingOn, openTitleScreen, setOpeningOn, titleOpen } from './title';
+import { mood, renderPreview, setSound, sfx, soundSettings, wireSound, type Mood } from './sound';
+import { playScene } from './scene';
+import { temperOf } from '../engine/lines';
+import type { OpeningBeat } from '../data/openings';
 import { armySupply, carryOf, castleSupply, cutOff, hyoroBugyo, initStores, isPort as isCoast, storeMax, storeOf, supplyRange } from '../engine/supply';
 import { CHIAN_RAMP, EMBER_RAMP, FRONT_COLORS, HEX_ALPHA, MAP_MODES, MB, MapView, SUP, type MapMode } from './render';
 import { cancelOrder, orderAttack, orderFor, ordersAt } from '../engine/orders';
@@ -59,6 +63,8 @@ import { BUSAN_ART, FUYU_ART, GIHEI_ART, KOWA_ART, NAGOYA_ART, SHIMAKAGE_ART } f
 import { HYOJO_ART, MINATO_ART } from '../data/scenes';
 import { SCENE_LABEL } from '../data/lines';
 import { absorb as absorbClan } from '../engine/diplomacy';
+import { captureCastle, killGeneral } from '../engine/ops';
+import { rebelFront } from '../engine/on';
 import {
   baishinBlock, baishinOf, delegatedArmy, dissolveFront, fiefCap, fiefKoku, fiefOf, frontArmies, frontById, frontName, frontOfArmy, frontOfCastle, frontsOf, grantBlock, grantCastle, heirCands as fiefHeirCands,
   leaderCands, makeBaishin, makeDirect, migrateFiefs, policyOf, removeCastle, setFrontBoss, setFrontPolicy, setHeir, targetCands, targetLabel, vacantFiefs,
@@ -139,6 +145,9 @@ export function boot(saved?: { state?: GameState }) {
     toast(b.title || '今は選べない');
   }, true);
   $('panel').addEventListener('click', onPanelClick);
+  // 音: 最初の操作で鳴らし始め、押した札・ボタンには小さな音
+  wireSound();
+  document.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('button, [data-act], .op-box, summary')) sfx('tick'); }, true);
   $('modal-body').addEventListener('click', onModalClick);
   // 地方ごとにたたんだ一覧の開閉を覚える（描き直しても保つ）
   $('modal-body').addEventListener('toggle', (e) => { const d = e.target as HTMLDetailsElement; const k = d.querySelector('summary')?.dataset.id; if (k) regOpen.set(k, d.open); }, true);
@@ -183,6 +192,7 @@ export function boot(saved?: { state?: GameState }) {
     }
     if (el.dataset.fpol && s) { const f = frontById(s, +el.dataset.fpol); if (f) { setFrontPolicy(s, f, el.value as 'attack' | 'defend' | 'build'); toast(`${frontName(s, f)}の方針を${R.FRONT_POLICY_NAME[f.policy]}にした`); } refresh(); openMenu(); }
     if (el.dataset.ftgt !== undefined && s) { const f = frontById(s, +el.dataset.ftgt); if (f) { setFrontPolicy(s, f, 'attack', el.value || null); toast(`${frontName(s, f)}の目標: ${targetLabel(s, f)}`); } refresh(); openMenu(); }
+    if (el.dataset.vol) { setSound({ [el.dataset.vol]: +el.value / 100 } as { vm?: number; vs?: number }); if (el.dataset.vol === 'vs') sfx('ponn'); }
     if (el.dataset.vq !== undefined && s) { vasFilter.q = el.value.trim(); vasFilter.page = 1; reopen(); }
     if (el.dataset.vrank !== undefined && s) { vasFilter.rank = el.value; vasFilter.page = 1; reopen(); }
     if (el.dataset.sgd && el.value && s) { const g = s.generals[el.dataset.sgd]; const why = shugodaiBlock(s, g, el.value); if (why) toast(why); else { appointShugodai(s, g, el.value); toast(`${g.name}を${el.value}の守護代に任じた`); cutin(s, g, 'ninkan', { kan: `${el.value}守護代` }); } refresh(); reopen(); }
@@ -219,6 +229,11 @@ export function boot(saved?: { state?: GameState }) {
   window.claude?.hot?.snapshot?.(() => ({ state: s }));
   (window as unknown as { __sengoku: unknown }).__sengoku = {
     get state() { return s; }, view, center: hexCenter,
+    renderSound: (what: string, sec: number) => renderPreview(what as Parameters<typeof renderPreview>[0], sec), // 試聴用の書き出し
+    kill: (id: string) => { if (s) { killGeneral(s, s.generals[id], 'テスト'); refresh(); } }, // テスト用: 武将を討ち死にさせる
+    rebel: (fid: number) => { if (s) { const f = frontById(s, fid); if (f) rebelFront(s, f); refresh(); } }, // テスト用: 領の謀反
+    capture: (cid: string) => { if (s) { const c = s.castles.find((x) => x.id === cid); if (c) captureCastle(s, c, s.player); refresh(); } }, // テスト用: 城を落としたことにする
+    playEvents: () => new Promise<void>((res) => { if (s) playEvents(s, res); else res(); }), // テスト用: たまった出来事の場面を流す
     surrender: (loser: string) => { if (s) { absorbClan(s, s.player, loser); refresh(); } }, // テスト用: 降伏勧告が通ったことにする
     supply: (id: number) => (s && s.armies[id] ? armySupply(s, s.armies[id]) : null), neighbors: (h: number) => NEIGHBORS[h],
     // テスト用: 自軍の部隊で隣の敵部隊と合戦を開く
@@ -229,10 +244,18 @@ export function boot(saved?: { state?: GameState }) {
   openTitle();
 }
 
+// 地図の曲: 戦のあった月（先月・今月）や、敵が当家の城に迫っていれば戦の曲、ほかは平時の曲
+function mapMood(st: GameState) {
+  const C = st.clans[st.player];
+  if (st.karairi?.active) { mood('war'); return; }
+  const fighting = (C.foughtTurn ?? -9) >= st.turn - 2 || Object.values(st.armies).some((a) => a.clan !== st.player && hostile(st, a.clan, st.player) && clanCastles(st, st.player).some((c) => hexDist(a.hex, c.hex) <= 1));
+  mood(fighting ? 'war' : 'peace');
+}
 function startWith(state: GameState) {
   // 旧版のセーブにも外交の欄を足す
   state.treaties ??= []; state.dipTried ??= {}; state.lastClash ??= {}; state.orders ??= []; state.revealed = (state.revealed ?? []).filter((id) => state.generals[id]);
   s = state;
+  mapMood(state);
   migrateMap(s); syncCrossings(s); // 唐入りのあいだだけ渡海の路を開く
   view.state = s;
   mode = { kind: 'none' };
@@ -339,6 +362,7 @@ function turnLabel(turn: number) {
 
 let toastTimer = 0;
 function toast(msg: string) {
+  if (/[0-9,]+貫|加増|買|投じ|献金/.test(msg) && !/足りない|できない|要る/.test(msg)) sfx('coin'); // 金の出入り
   const t = $('toast');
   t.textContent = msg; t.hidden = false;
   clearTimeout(toastTimer);
@@ -815,6 +839,7 @@ function doEndTurn() {
   if (!s || busy || s.over) return;
   busy = true;
   $('btn-end').setAttribute('disabled', '');
+  sfx('turn');
   toast('諸大名が動いている…');
   setTimeout(async () => {
     const st = s!;
@@ -826,11 +851,18 @@ function doEndTurn() {
     mode = { kind: 'none' };
     refresh();
     if (st.over) { showGameOver(); return; }
+    mapMood(st);
+    if (st.log.some((l) => l.turn === st.turn - 1 && l.kind === 'castle' && l.text.includes(`${st.clans[st.player].name}家が`) && l.text.includes('を攻略'))) sfx('castle');
+    playEvents(st, () => afterTurnReports(st));
+  }, 30);
+}
+function afterTurnReports(st: GameState) {
+  {
     const reps = st.reports.slice();
     const news = st.log.filter((l) => l.turn === st.turn - 1 && l.mine && l.kind !== 'battle');
     if (reps.length || news.length || vacantFiefs(st).length || st.offers?.length || st.missionVisit || shiokiPending(st).length || st.kanOffer || st.returnOffer || st.quarrel || st.willAsked === st.turn - 1 || rewardWaiting(st).some((g) => dueOf(g) >= R.ON_DUE_FREE && !delegateOf(st).staff) || (st.scenes?.length && cutinOn())) showReports(reps, `${dateLabel(st)}　諸国の動き`, news.map((l) => l.text));
     else toast(`${dateLabel(st)}`);
-  }, 30);
+  }
 }
 
 // ───────── モーダル ─────────
@@ -885,6 +917,178 @@ function yorikiList(st: GameState, f: Front) {
   return `<div class="yoriki-list">${cands.map((x) => { const g = st.generals[x.leader], other = x.boss !== undefined && x.boss !== f.id ? frontById(st, x.boss) : null, sub = frontsOf(st).filter((y) => y.boss === x.id).length;
     return `<label class="il-opt il-radio"><input type="checkbox" name="yoriki" value="${x.id}" ${x.boss === f.id ? 'checked' : ''}><b>${esc(g.name)}（${esc(R.RANK_NAME[g.rank])}）</b><span>${x.castles.map((i) => esc(st.castles[i].name)).join('・')}　${fiefKoku(st, x).toFixed(1)}万石・${dist(x)}ヘックス${other ? `・<span class="warn">今は${esc(frontName(st, other))}の与力</span>` : ''}${sub ? `・与力${sub}（${esc(g.name)}ごとこちらへ移る）` : ''}</span></label>`; }).join('')}</div>
     <div class="actions"><button class="act primary" data-act="yoriki-apply" data-id="${f.id}">決める</button><button class="act" data-act="yoriki-open" data-id="${f.id}">やめる</button></div>`;
+}
+
+// 茶会の場面: 亭主の城の茶室で、亭主の口上・湯の音・客の言葉（気性ごと）・結び
+const TEA_HOST: Record<string, string[]> = {
+  bold: ['堅苦しいことは抜きじゃ。まずは一服、飲まれよ。', '戦の話は置いておけ。今日は茶じゃ。'],
+  wise: ['一期一会と申します。今日のこの一服は、二度とは巡ってまいりませぬ。', '茶の湯は、心を静めて人を見る場にござる。'],
+  gentle: ['皆さま、日頃のお働き、まことにかたじけなく。ささやかながら一服を。', '肩の力を抜いて、ゆるりとなされませ。'],
+  steady: ['点前は拙いが、心は込めた。召し上がれ。', '一服、差し上げよう。'],
+};
+const TEA_GUEST: Record<string, string[]> = {
+  bold: ['……茶など柄ではないが、悪くない。', 'ふむ、この一碗で、ちと腹の虫が収まったわ。'],
+  wise: ['一碗の茶に、殿のお心遣いを見ました。', 'この静けさの中でこそ、見えるものもござる。'],
+  gentle: ['身に余るおもてなし、痛み入りまする。', 'ありがたや……。胸の内のわだかまりが、溶けていくようにござる。'],
+  steady: ['結構な点前にござった。', '馳走になった。この御恩、働きでお返しいたす。'],
+};
+function teaBeats(st: GameState, host: General, guests: General[], on0: Map<string, number>): OpeningBeat[] {
+  const castle = st.castles[host.loc]?.owner === st.player ? st.castles[host.loc] : capitalCastle(st);
+  const at = castle?.id, pick = <T,>(xs: T[], k: number) => xs[(k + st.turn) % xs.length];
+  const tea = host.tea ? st.items[host.tea] : null;
+  const shown = guests.slice(0, 3);
+  const beats: OpeningBeat[] = [
+    { head: '茶会', text: `${castle ? `${castle.name}の` : ''}茶室。亭主の${host.name}が、${guests.map((g) => g.name).join('・')}を招いた。`, at, zoom: 1.8, light: [st.player], mark: at ? [at] : [] },
+    { who: host.id, name: host.name, label: '亭主', text: tea ? `今日は「${tea.name}」で一服差し上げよう。${pick(TEA_HOST[temperOf(host)], 0)}` : pick(TEA_HOST[temperOf(host)], 1), at, zoom: 1.8, light: [st.player] },
+    { head: '', text: '釜の湯がしずかに鳴る。茶筅の音のほかは、何も聞こえない。', at, zoom: 1.8, light: [st.player] },
+    ...shown.map((g, k): OpeningBeat => { const own = g.tea ? st.items[g.tea] : null; return { who: g.id, name: g.name, label: own ? `客・「${own.name}」を持参` : '客', text: own ? `わたしも「${own.name}」を持ってまいった。名物どうし、並べて眺めるのもまた一興。` : pick(TEA_GUEST[temperOf(g)], k), at, zoom: 1.8, light: [st.player] }; }),
+    { head: '茶会のあと', text: `${tea ? `亭主の名物「${tea.name}」で、客の皆の恩がさらに+${teaGrade(st, host)}。` : ''}${guests.some((g) => teaGrade(st, g)) ? '茶器を持参した客は、その格の分さらに上がった。' : ''}${guests.map((g) => `${g.name}（恩${Math.round(on0.get(g.id) ?? 0)}→${Math.round(g.on ?? 0)}）`).join('、')}。`, at, zoom: 1.6, light: [st.player] },
+  ];
+  return beats;
+}
+const capitalCastle = (st: GameState) => { const L = st.clans[st.player].leader ? st.generals[st.clans[st.player].leader!] : null; return L ? st.castles[L.loc] : clanCastles(st, st.player)[0]; };
+
+// 忍びの場面: 夜の潜入 → 忍び頭のひとこと → 首尾（成った・しくじった・捕らわれた）
+function ninjaBeats(st: GameState, kind: NinjaAct, head: General, tg: { gen?: General; castle?: Castle }, r: 'ok' | 'fail' | 'caught', c0: { chian: number; store: number; gov: General | null; on: number } | null): OpeningBeat[] {
+  const hex = tg.castle ? tg.castle.hex : tg.gen ? genHex(st, tg.gen) ?? st.castles[tg.gen.loc].hex : 0;
+  const near = tg.castle ?? [...st.castles].sort((a, b) => hexDist(a.hex, hex) - hexDist(b.hex, hex))[0];
+  const at = near.id, place = tg.castle ? tg.castle.name : tg.gen?.army !== null && tg.gen?.army !== undefined ? `${near.name}の近くの陣` : near.name;
+  const foe = tg.gen?.clan ?? tg.castle?.owner ?? null, foeName = foe ? `${clanName(st, foe)}家` : '国人衆';
+  const base = { at, zoom: 1.9, light: foe ? [foe] : [], mark: [at] };
+  const intro: Record<NinjaAct, string> = {
+    assassinate: `月のない夜。忍び頭の${head.name}が、${tg.gen?.name ?? ''}のいる${place}へ忍び入る。`,
+    rumor: `${place}の城下。旅の商人や虚無僧に化けた者たちが、市や辻に紛れ込んでいく。`,
+    arson: `風の強い夜。${head.name}の手の者が、${place}の蔵と城門に近づく。`,
+    spy: `${head.name}の手の者が、${tg.gen?.name ?? ''}のいる${place}に紛れ込む。`,
+  };
+  const word: Record<NinjaAct, string> = { assassinate: '……一太刀で、終わらせる。', rumor: '噂というものは、刀より深く刺さるものよ。', arson: '火は、風が運んでくれる。', spy: '見るだけ、聞くだけ。それで足りる。' };
+  const beats: OpeningBeat[] = [
+    { head: `夜陰 ― ${NINJA_NAME[kind]}`, text: intro[kind], ...base, sound: 'clap' },
+    { who: head.id, name: head.name, label: '忍び頭', text: word[kind], ...base },
+  ];
+  const c = tg.castle, gv = c0?.gov ?? null;
+  if (r === 'ok') {
+    if (kind === 'assassinate') beats.push({ head: '暗殺', text: `翌朝、${tg.gen!.name}は寝所で冷たくなっていたと伝わる。${foeName}は将を一人失った。`, ...base, sound: 'clash' });
+    if (kind === 'rumor') {
+      if (gv) beats.push({ who: gv.id, name: gv.name, label: `${c!.name}の城主`, text: '……殿は、わしを疑っておられるのか。あの噂は、誰が流したのだ。', ...base });
+      beats.push({ head: '流言', text: `${c!.name}の治安は${Math.round(c0!.chian)}→${Math.round(c!.chian)}に乱れた。${gv ? `城主${gv.name}の主家への恩も${Math.round(c0!.on)}→${Math.round(gv.on ?? 0)}に下がった。` : ''}`, ...base });
+    }
+    if (kind === 'arson') beats.push({ head: '放火', text: `夜空を焦がす火の手が上がった。${c!.name}の蔵の兵糧は${fmt(c0!.store)}→${fmt(c!.store ?? 0)}石、城門も焼けた。`, ...base, sound: 'fire' });
+    if (kind === 'spy') { const t = tg.gen!, a = t.army !== null ? st.armies[t.army] : undefined; beats.push({ head: '探り', text: `${t.name}の力量が明らかになった。武勇${t.bra}・知略${t.int}・統率${t.lea}・魅力${t.cha}。${a ? `率いる隊は兵${fmt(a.troops)}・鉄砲${fmt(a.guns ?? 0)}。` : ''}`, ...base }); }
+  } else {
+    if (tg.gen && kind === 'assassinate') beats.push({ who: tg.gen.id, name: tg.gen.name, label: foeName, text: '何奴！ 曲者じゃ、出あえ、出あえ！', ...base, sound: 'clash' });
+    else beats.push({ head: '露見', text: `${place}の者たちが騒ぎ出した。手の者は闇に紛れて逃げた。`, ...base });
+    if (r === 'caught') beats.push({ who: head.id, name: head.name, label: '捕らわれた', text: '……不覚。', ...base, sound: 'lose' }, { head: 'しくじり', text: `${head.name}は${foeName}に捕らわれた。忍び頭の座は空いた。${foeName}は当家を恨んでいる。`, ...base });
+    else beats.push({ head: 'しくじり', text: `${NINJA_NAME[kind]}はしくじった。${foeName}は当家を恨んでいる。`, ...base });
+  }
+  return beats;
+}
+
+// ───────── 大きな出来事の場面（家督相続・滅亡・降伏・謀反） ─────────
+const EVENTS_KEY = 'sengoku-events';
+// 出すか（設定で切れる）。自動テスト（webdriver）では、明示して「on」にしたときだけ出す
+const eventsOn = () => { try { const v = localStorage.getItem(EVENTS_KEY); if (v === 'off') return false; if ((navigator as Navigator & { webdriver?: boolean }).webdriver) return v === 'on'; } catch { /* 読めなければ出す */ } return true; };
+// 親しい者の呼び方: 姓を除いた名（「織田信広」→「信広」）
+const callName = (g: General) => (g.name.length >= 3 ? g.name.slice(-2) : g.name);
+function eventBeats(st: GameState, e: BigEvent): { title: string; mood: Mood; beats: OpeningBeat[] } {
+  const P = st.player, C = st.clans[P], lord = C.leader ? st.generals[C.leader] : undefined;
+  const gen = (id: string | null | undefined) => (id ? st.generals[id] : undefined);
+  const capId = (capital(st, P) ?? clanCastles(st, P)[0])?.id;
+  if (e.kind === 'katoku') {
+    const old = gen(e.old), heir = gen(e.heir)!, regent = gen(e.regent);
+    const base = { at: capId, zoom: 1.6, light: [P], mark: capId ? [capId] : [] };
+    const will = e.will ? R.WILL_NAME[e.will as keyof typeof R.WILL_NAME] : null;
+    const beats: OpeningBeat[] = [{ head: `${old?.name ?? '当主'}、逝く`, text: `${C.name}家の当主${old?.name ?? ''}が世を去った。家中の者が、急ぎ${capId ? st.castles.find((c) => c.id === capId)!.name : '本城'}に集まる。`, ...base, sound: 'turn' }];
+    if (old) beats.push({ who: old.id, name: old.name, label: '最期の言葉', text: will ? `${callName(heir)}……あとは任せた。${will}。それを忘れねば、家は残る……。` : `${callName(heir)}……この家を、頼んだぞ……。`, ...base });
+    if (regent) beats.push({ who: regent.id, name: regent.name, label: '後見役', text: e.young ? `若殿は、この${regent.name}が命に代えてお支えいたしまする。` : `新しき殿のもと、家中を一つにまとめまする。`, ...base });
+    beats.push({ who: heir.id, name: heir.name, label: '家督を継ぐ', text: e.young ? '……父上のあとは、わたしが継ぎまする。皆、力を貸してくだされ。' : `${C.name}の家は、わしが継ぐ。皆、ついて来い。`, ...base });
+    beats.push({ head: '家督相続', text: `${C.name}家は${heir.name}が継いだ。${will ? `遺言「${will}」は家中に伝えられた。` : ''}代替わりに、家中にも領内にも動揺が広がっている。`, ...base });
+    return { title: '家督相続', mood: 'somber', beats };
+  }
+  if (e.kind === 'ruin') {
+    const foe = gen(e.leader), base = { at: e.castle, zoom: 1.7, light: [P], mark: [e.castle] };
+    const cname = st.castles.find((c) => c.id === e.castle)?.name ?? '';
+    const beats: OpeningBeat[] = [{ head: `${e.name}家、滅ぶ`, text: `${cname}が落ち、${e.name}家は最後の城を失った。`, ...base, sound: 'castle' }];
+    if (foe && foe.status !== 'dead') beats.push({ who: foe.id, name: foe.name, label: `${e.name}家の当主`, text: '無念……。わが家も、ここまでか。', ...base });
+    else if (foe) beats.push({ head: '', text: `当主の${foe.name}は、すでにこの世になかった。`, ...base });
+    if (lord) beats.push({ who: lord.id, name: lord.name, label: `${C.name}家の当主`, text: `${e.name}の旧領は、当家が治める。民を安んじよ。`, ...base });
+    beats.push({ head: '滅亡', text: `${e.name}家の旧臣は散り散りになった。浪人や捕虜を召し抱えるか否かは、殿の胸ひとつ。`, ...base });
+    return { title: `${e.name}家の滅亡`, mood: 'war', beats };
+  }
+  if (e.kind === 'surrender') {
+    const foe = gen(e.leader), at = e.seat ?? capId, base = { at, zoom: 1.6, light: [P], mark: at ? [at] : [] };
+    const beats: OpeningBeat[] = [{ head: `${e.name}家、降る`, text: `${e.name}家が、当家の降伏勧告を受け入れた。`, ...base, sound: 'clap' }];
+    if (foe) beats.push({ who: foe.id, name: foe.name, label: `${e.name}家の当主`, text: `本領を安堵いただけるなら、${e.name}の家は貴家の旗の下に入りまする。`, ...base });
+    if (lord) beats.push({ who: lord.id, name: lord.name, label: `${C.name}家の当主`, text: 'よかろう。これよりは当家の城持ちとして、その地を守れ。', ...base });
+    beats.push({ head: '本領安堵', text: foe ? `${foe.name}は本領${e.castles}城を安堵され、外様の城持ちとなった。家臣${e.baishin}人はその陪臣。` : `${e.name}家の${e.castles}城が当家に加わった。`, ...base });
+    return { title: `${e.name}家の降伏`, mood: 'peace', beats };
+  }
+  if (e.kind === 'ikki') {
+    const c = st.castles.find((x) => x.id === e.castle)!, base = { at: e.castle, zoom: 1.8, light: [P, e.clan], mark: [e.castle] };
+    const kennyo = st.generals.honganji_kennyo, kAlive = kennyo && kennyo.clan === e.clan && !['dead', 'captive'].includes(kennyo.status);
+    const beats: OpeningBeat[] = [
+      { head: '一向一揆', text: `${c.name}の領内で、門徒が蜂起した。寺の鐘が鳴り、筵旗が立つ。${fmt(e.troops)}人の一揆勢が、城へ迫る。`, ...base, sound: 'horn' },
+      { who: 'ikki_toryo', name: '一揆の旗頭', label: '門徒', text: '進まば往生極楽、退かば無間地獄！ 仏敵を討て！', ...base },
+    ];
+    if (kAlive) beats.push({ who: kennyo.id, name: kennyo.name, label: '本願寺の門主', text: '門徒の衆よ、法敵に屈してはならぬ。', ...base });
+    beats.push({ head: '門徒の戦', text: '一揆勢は百姓だが、死を恐れない。城兵だけで支えるか、兵を向けて散らすか。', ...base });
+    return { title: '一向一揆', mood: 'battle', beats };
+  }
+  if (e.kind === 'treaty') {
+    const O = st.clans[e.other], ol = O?.leader ? st.generals[O.leader] : undefined, ocap = capital(st, e.other)?.id, both = [P, e.other];
+    const base = { at: ocap ?? capId, zoom: 1.2, light: both, mark: [ocap, capId].filter((x): x is string => !!x) };
+    if (e.treaty === 'alliance') {
+      const beats: OpeningBeat[] = [{ head: '同盟', text: `${O.name}家と同盟を結んだ。互いに攻めず、背を預け合う（${DIP.ALLIANCE_MONTHS}か月）。`, ...base, sound: 'clap' }];
+      if (ol) beats.push({ who: ol.id, name: ol.name, label: `${O.name}家の当主`, text: '互いに背を預けよう。これで前の敵だけを見ていられる。', ...base });
+      if (lord) beats.push({ who: lord.id, name: lord.name, label: `${C.name}家の当主`, text: 'よしなに頼む。この盟約、違えることのなきように。', ...base });
+      return { title: `${O.name}家との同盟`, mood: 'peace', beats };
+    }
+    const hime = `hime_${1 + ([...e.other].reduce((t, ch) => t + ch.charCodeAt(0), 0) % 3)}`;
+    const beats: OpeningBeat[] = [{ head: '婚姻', text: `${O.name}家と婚姻を結んだ。${O.name}家の姫が、${capId ? st.castles.find((c) => c.id === capId)!.name : '本城'}へ輿入れする。`, ...base, arrow: ocap && capId ? [[ocap, capId]] : [], sound: 'clap' }];
+    beats.push({ who: hime, name: `${O.name}家の姫`, label: '輿入れ', text: '末永く、よしなに……。両家の縁を、つなぎとうございます。', ...base });
+    if (ol) beats.push({ who: ol.id, name: ol.name, label: `${O.name}家の当主`, text: '娘を頼む。これで両家の縁は固い。', ...base });
+    if (lord) beats.push({ who: lord.id, name: lord.name, label: `${C.name}家の当主`, text: '確かに迎えた。両家の縁、大事にいたそう。', ...base });
+    beats.push({ head: '縁を結ぶ', text: '婚姻に期限はない。手切れにすれば、同盟より重く威信を失う。', ...base });
+    return { title: `${O.name}家との婚姻`, mood: 'peace', beats };
+  }
+  if (e.kind === 'ship') {
+    const base = { at: e.port, zoom: 1.7, light: [P], mark: [e.port] };
+    return { title: '南蛮船', mood: 'peace', beats: [
+      { head: '南蛮船', text: `${portName(e.port)}の沖に、見たこともない大船が現れた。黒い船体に、幾重もの帆。湊は人だかりで埋まった。`, ...base, sound: 'horn' },
+      { who: 'capitan', name: '南蛮船のカピタン', label: 'ポルトガルの商人', text: 'わたしどもはポルトガルの商人です。鉄砲も、大筒も、珍しい品もございます。よいお取引を。', ...base },
+      { head: '南蛮市', text: `南蛮船は${R.SHIP_STAY}か月とどまる。「商い」の南蛮市で鉄砲・大筒・南蛮の品を買える。来ている間は貿易の利も入る。`, ...base },
+    ] };
+  }
+  if (e.kind === 'mission') {
+    const md = misDef(e.mis), base = { at: capId, zoom: 1.6, light: [P], mark: capId ? [capId] : [] };
+    return { title: '宣教師の来訪', mood: 'peace', beats: [
+      { head: '宣教師の来訪', text: `黒い衣の異国の僧、${md?.[1] ?? '宣教師'}が、布教の許しを願って訪ねてきた。`, ...base, sound: 'ponn' },
+      { who: e.mis, name: md?.[1] ?? '宣教師', label: '宣教師', text: 'デウスの教えを、この国の民に伝えることを、どうかお許しください。', ...base },
+      { head: '許すか、禁じるか', text: '布教を許せば南蛮船が来やすくなるが、寺社は反発する。返事は今月の要件で。', ...base },
+    ] };
+  }
+  const reb = gen(e.leader)!, at = e.seat ?? capId, base = { at, zoom: 1.6, light: e.clan ? [e.clan, P] : [P], mark: at ? [at] : [] };
+  const odoso = e.why === 'odoso', heir = gen(e.heir);
+  const beats: OpeningBeat[] = [
+    { head: odoso ? 'お家騒動' : '謀反', text: odoso ? `家督をめぐって、${reb.name}が${heir?.name ?? '新しい当主'}の跡目を認めず、${e.castles}城を率いて家を割った。` : `${reb.name}が謀反を起こした！ ${e.castles}城が当家を離れ、${e.name}家を立てた。`, ...base, sound: 'horn' },
+    { who: reb.id, name: reb.name, label: odoso ? '一門' : '城持ち', text: odoso ? '頼りない若輩に、この家は任せられぬ。' : '恩賞は薄く、疑いばかり……。もはや、主と仰ぐことはできぬ。', ...base },
+  ];
+  if (lord) beats.push({ who: lord.id, name: lord.name, label: `${C.name}家の当主`, text: odoso ? `……ならば、力で家をまとめるまで。` : `……${reb.name}め、恩を仇で返すか！`, ...base });
+  beats.push({ head: odoso ? '家が割れた' : '離れた領', text: `${e.name ? `${e.name}家は、いまや敵である。` : ''}離れた城を取り戻すか、和を探るか。`, ...base });
+  return { title: odoso ? 'お家騒動' : '謀反', mood: 'war', beats };
+}
+// 出来事の場面を順に見せ、終わったら then
+function playEvents(st: GameState, then: () => void) {
+  const evs = (st.events ?? []).splice(0);
+  if (!evs.length || !eventsOn()) { then(); return; }
+  closeModal();
+  const next = (k: number) => {
+    if (k >= evs.length) { mapMood(st); refresh(); then(); return; }
+    const { title, mood: m, beats } = eventBeats(st, evs[k]);
+    mood(m);
+    playScene(view, st, title, beats, (id, w) => face(id, w), () => next(k + 1));
+  };
+  next(0);
 }
 
 // 領主のいなくなった領の後継ぎ
@@ -948,6 +1152,7 @@ function reopen() {
 
 function openTitle() {
   const auto = load(AUTO_KEY);
+  mood('title');
   closeModal();
   openTitleScreen({
     auto, autoLabel: auto ? `${dateLabel(auto)}・${auto.clans[auto.player].name}家` : '',
@@ -1780,7 +1985,7 @@ const TABS: Record<string, (st: GameState) => string> = {
       <button class="act primary" data-act="ninja-do" ${why ? `disabled title="${esc(why)}"` : ''}>${NINJA_NAME[ninjaSel.act]}を命じる${why ? '' : `（見込み ${Math.round(ninjaChance(st, st.player, ninjaSel.act, tg) * 100)}%）`}</button></div>
       ${why && ninjaSel.target ? `<p class="hint" style="margin:2px 0">${esc(why)}</p>` : ''}` : `<p class="hint">${ninjas.length ? '忍び頭を置けば、月に一度、忍びを使える。' : '待機の「忍び」の家臣がいない（在野の忍びを登用できる）。'}</p>`}
     <h3 class="sect-h">茶会</h3>
-    ${chajins.length ? `<div class="actions" style="gap:6px"><select id="sel-tea-host" aria-label="亭主">${chajins.map((g) => `<option value="${g.id}" ${teaHost === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select><button class="act" data-act="tea-do" ${tw ? `disabled title="${esc(tw)}"` : ''}>茶会を開く（金${TEA_COST}貫・恩の低い${TEA_GUESTS}人の恩+${TEA_ON}）</button></div>` : '<p class="hint">「茶人」の家臣がいない。</p>'}
+    ${chajins.length ? `<div class="actions" style="gap:6px"><select id="sel-tea-host" aria-label="亭主">${chajins.map((g) => `<option value="${g.id}" ${teaHost === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select><button class="act" data-act="tea-do" ${tw ? `disabled title="${esc(tw)}"` : ''}>茶会を開く（金${TEA_COST}貫・恩の低い${TEA_GUESTS}人の恩+${TEA_ON + teaGrade(st, st.generals[teaHost])}）</button></div><p class="hint" style="margin-top:2px">${teaGrade(st, st.generals[teaHost]) ? `亭主の名物「${esc(st.items[st.generals[teaHost].tea!].name)}」で客の皆に+${teaGrade(st, st.generals[teaHost])}。` : '亭主が名物の茶器を持てば、客の皆にその格の分だけ恩が上乗せされる。'}客が自分の茶器を持っていれば、その客はさらに格の分上がる（下賜で持たせる）。</p>` : '<p class="hint">「茶人」の家臣がいない。</p>'}
     <h3 class="sect-h">普請</h3>
     ${fushinCs.length ? `<div class="actions" style="flex-wrap:wrap;gap:6px">${fushinCs.map((c) => { const w = fushinBlock(st, c); return `<button class="act" data-act="fushin" data-id="${c.i}" ${w ? `disabled title="${esc(w)}"` : ''}>${esc(c.name)}（${esc(R.CASTLE_KIND[c.kind ?? 'hira'].name)}）を改める・金${fmt(FUSHIN_COST)}貫</button>`; }).join('')}</div>` : '<p class="hint">「築城」の家臣を城主に置けば、城の造りを一段改められる（砦・館→平城→平山城）。</p>'}
     <h3 class="sect-h">特性のある家臣（${own.length}人）</h3>
@@ -1941,6 +2146,9 @@ const TABS: Record<string, (st: GameState) => string> = {
     const saved = load(SAVE_KEY);
     return `<div class="actions" style="margin-top:0"><button class="act primary" data-act="save">保存</button><button class="act" data-act="load" ${saved ? '' : 'disabled'}>読込${saved ? `（${dateLabel(saved)}・${esc(saved.clans[saved.player].name)}）` : ''}</button><button class="act" data-act="newgame">最初から</button></div>
       <div class="actions"><button class="act" data-act="cutin-toggle" aria-pressed="${cutinOn()}">顔見せ（返事や節目のセリフ）: ${cutinOn() ? '出す' : '出さない'}</button></div>
+      ${(() => { const so = soundSettings(); return `<div class="actions" style="align-items:center;gap:10px;flex-wrap:wrap"><button class="act" data-act="snd-music" aria-pressed="${so.music}">音楽: ${so.music ? '出す' : '出さない'}</button><label class="hint" style="margin:0;display:flex;align-items:center;gap:6px">音量<input type="range" min="0" max="100" value="${Math.round(so.vm * 100)}" data-vol="vm" aria-label="音楽の音量"></label></div>
+      <div class="actions" style="align-items:center;gap:10px;flex-wrap:wrap"><button class="act" data-act="snd-sfx" aria-pressed="${so.sfx}">効果音: ${so.sfx ? '出す' : '出さない'}</button><label class="hint" style="margin:0;display:flex;align-items:center;gap:6px">音量<input type="range" min="0" max="100" value="${Math.round(so.vs * 100)}" data-vol="vs" aria-label="効果音の音量"></label></div>`; })()}
+      <div class="actions"><button class="act" data-act="events-toggle" aria-pressed="${eventsOn()}">大きな出来事の場面（家督相続・滅亡・降伏・謀反）: ${eventsOn() ? '出す' : '出さない'}</button></div>
       <div class="actions"><button class="act" data-act="opening-toggle" aria-pressed="${openingOn()}">序幕（始める前の時代の紹介）: ${openingOn() ? '出す' : '出さない'}</button></div>
       <div class="actions"><button class="act" data-act="battle-style">合戦の部隊の印: ${UNIT_STYLE_NAME[getBattleStyle()]}</button></div>
       <div class="actions"><button class="act" data-act="army-style" aria-pressed="${view.armyStyle === 'hayashi'}">地図の部隊の印: ${view.armyStyle === 'hayashi' ? '幟の林（兵が多いほど幟が増える）' : '丸（武将名と兵数の弧）'}</button></div>
@@ -2111,6 +2319,7 @@ function courtSay(st: GameState, rank: number) {
   if (who) cutinLine(st, envoyLine(st, high ? 'courtHigh' : 'courtRank', persona(who), { rank: name }));
 }
 function showCutin(st: GameState) {
+  sfx('ponn');
   let el = document.getElementById('cutin');
   if (!el) {
     el = document.createElement('div'); el.id = 'cutin'; el.setAttribute('role', 'status');
@@ -2148,6 +2357,7 @@ function missionVisitBlock(st: GameState) {
 
 // 天下統一のエンディング: 絵を一面に、下に言葉と記録
 function showEnding(st: GameState) {
+  mood('triumph'); sfx('win');
   closeModal();
   let el = document.getElementById('ending');
   if (!el) { el = document.createElement('div'); el.id = 'ending'; document.body.appendChild(el); el.addEventListener('click', onModalClick); }
@@ -2282,6 +2492,7 @@ function iscriptFirst(st: GameState): IStep[] {
 }
 
 function openInterlude(st: GameState) {
+  mood('somber');
   $('ending').hidden = true;
   let el = document.getElementById('interlude');
   if (!el) { el = document.createElement('div'); el.id = 'interlude'; document.body.appendChild(el); el.addEventListener('click', onInterludeClick); }
@@ -2397,6 +2608,7 @@ const KEND: Record<string, { h: string; art: () => string; text: (lord: string, 
   collapse: { h: '国の崩れ', art: () => HYOJO_ART, text: (l) => `終わらない唐入りに、国の内は疲れ果てた。${l}の天下は内から崩れ始める。`, sub: '海の向こうに兵を送り続けた代償は、あまりに大きかった。' },
 };
 function showKarairiEnd(st: GameState) {
+  mood('somber');
   closeModal();
   const k = st.karairi!;
   const E = KEND[k.end!];
@@ -2465,6 +2677,7 @@ function karairiScenes(st: GameState) {
 }
 
 function showGameOver() {
+  mood('somber'); sfx('lose');
   const st = s!;
   const win = st.over === 'win';
   if (st.karairi?.end) { showKarairiEnd(st); return; }
@@ -2620,6 +2833,9 @@ function onModalClick(e: Event) {
     }
     toast(n ? `${n}度投じた（${fmt(spent)}貫）` : '投じられる城がなかった'); refresh(); reopen(); return;
   }
+  if (act === 'snd-music') { setSound({ music: !soundSettings().music }); reopen(); return; }
+  if (act === 'snd-sfx') { setSound({ sfx: !soundSettings().sfx }); reopen(); if (soundSettings().sfx) sfx('ponn'); return; }
+  if (act === 'events-toggle') { try { localStorage.setItem(EVENTS_KEY, eventsOn() ? 'off' : 'on'); } catch { /* 記録できなくても続ける */ } reopen(); return; }
   if (act === 'opening-toggle') { setOpeningOn(!openingOn()); reopen(); return; }
   if (act === 'rw-all') { rwAll = id === '1'; rwPage = 1; reopen(); return; }
   if (act === 'rw-more') { rwPage++; reopen(); return; }
@@ -2637,8 +2853,27 @@ function onModalClick(e: Event) {
     refresh(); reopen(); return;
   }
   if (act === 'corps-fill') { const a = st.armies[+id]; if (a) { const n = fillArmy(st, a).length; toast(n ? `${n}人を配属した` : '入れられる武将がいなかった'); } refresh(); openMenu(); return; }
-  if (act === 'ninja-do') { const tg = ninjaTargetOf(st); const r = ninjaDo(st, st.player, ninjaSel.act, tg); toast(r === 'ok' ? `${NINJA_NAME[ninjaSel.act]}は成った` : r === 'caught' ? '忍びが捕らわれた' : r === 'fail' ? `${NINJA_NAME[ninjaSel.act]}はしくじった` : 'できない'); ninjaSel.target = ''; refresh(); if (!st.over) openMenu(); return; }
-  if (act === 'tea-do') { const g = st.generals[teaHost]; const gs2 = g ? teaCeremony(st, g) : []; toast(gs2.length ? `茶会で${gs2.length}人をもてなした` : '茶会を開けない'); refresh(); openMenu(); return; }
+  if (act === 'ninja-do') {
+    const tg = ninjaTargetOf(st), head = ninjaHead(st, st.player), kind = ninjaSel.act;
+    const c0 = tg.castle ? { chian: tg.castle.chian, store: tg.castle.store ?? 0, gov: tg.castle.governor ? st.generals[tg.castle.governor] : null, on: tg.castle.governor ? st.generals[tg.castle.governor].on ?? 0 : 0 } : null;
+    const r = ninjaDo(st, st.player, kind, tg);
+    const msg = r === 'ok' ? `${NINJA_NAME[kind]}は成った` : r === 'caught' ? '忍びが捕らわれた' : r === 'fail' ? `${NINJA_NAME[kind]}はしくじった` : 'できない';
+    ninjaSel.target = '';
+    if (!r || !head) { toast(msg); refresh(); if (!st.over) openMenu(); return; }
+    closeModal(); refresh(); mood('somber');
+    playScene(view, st, `忍び ― ${NINJA_NAME[kind]}`, ninjaBeats(st, kind, head, tg, r, c0), (id, w) => face(id, w), () => { mapMood(st); toast(msg); refresh(); });
+    return;
+  }
+  if (act === 'tea-do') {
+    const g = st.generals[teaHost];
+    const on0 = new Map(Object.values(st.generals).map((x) => [x.id, x.on ?? 0]));
+    const gs2 = g ? teaCeremony(st, g) : [];
+    if (!g || !gs2.length) { toast('茶会を開けない'); refresh(); openMenu(); return; }
+    closeModal(); refresh();
+    mood('title'); // 静かな曲に
+    playScene(view, st, '茶会', teaBeats(st, g, gs2, on0), (id, w) => face(id, w), () => { mapMood(st); toast(`茶会で${gs2.length}人をもてなした`); refresh(); });
+    return;
+  }
   if (act === 'fushin') { const c = st.castles[+id]; if (c && fushin(st, c)) toast(`${c.name}を改めた`); refresh(); openMenu(); return; }
   if (act === 'kr-build') { if (buildShips(st)) toast(`船${K.BUILD_SHIPS}艘を造った`); refresh(); openMenu(); return; }
   if (act === 'sub') { lastSub[lastTab[curMenu]] = id; openMenu(); document.querySelector('#modal .sheet')!.scrollTop = 0; return; }
@@ -2662,6 +2897,7 @@ function onModalClick(e: Event) {
     const name = clanName(st, id);
     const lead = st.clans[id].leader ? st.generals[st.clans[id].leader!] : undefined;
     const r = propose(st, kind, st.player, id, dipGift);
+    if (r === 'accepted' && st.events?.length && eventsOn()) { if (dipGift && st.items[dipGift]?.clan !== st.player) dipGift = null; afterAction(); refresh(); playEvents(st, () => { toast(kind === 'surrender' ? `${name}家が降った！` : `${name}家と${DIP_NAME[kind]}を結んだ`); if (!st.over) openMenu(); }); return; } // 降伏・同盟・婚姻が成れば、その場で場面を
     if (r) cutin(st, lead, (kind === 'surrender' ? 'surrender' : kind === 'marriage' ? 'marriage' : 'alliance') + (r === 'accepted' ? 'Yes' : 'No') as Scene, { foe: name });
     if (dipGift && st.items[dipGift]?.clan !== st.player) dipGift = null;
     toast(r === 'accepted' ? (kind === 'surrender' ? `${name}家が降った！` : `${name}家と${DIP_NAME[kind]}を結んだ`) : `${name}家は${DIP_NAME[kind]}を退けた`);
