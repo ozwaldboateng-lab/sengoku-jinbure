@@ -3,6 +3,7 @@ import { blurbOf, ERA_NAME } from '../data/blurbs';
 import { FEATURED } from '../data/roster';
 import { SCENARIOS, scenarioOf } from '../data/scenarios';
 import { HEXES } from '../engine/map';
+import { OPENINGS } from '../data/openings';
 import * as R from '../engine/rules';
 import { newGame } from '../engine/setup';
 import { newKarairiGame, S1592 } from '../engine/s1592';
@@ -29,7 +30,7 @@ const ERA_KANJI: Record<string, string> = { '1552': '天文二十一年', '1560'
 const karairiUnlocked = () => { try { return !!localStorage.getItem('sengoku-karairi'); } catch { return false; } };
 const DIFF_NOTE: Record<R.Difficulty, string> = { easy: 'AIは慎重に攻め、動員も控えめ。', normal: '標準。', hard: 'AIは攻め気が強く、囲みを狙う。', veryhard: 'AIの見積もりが鋭く、隙を見逃さない。' };
 
-type Screen = 'top' | 'era' | 'clan' | 'help';
+type Screen = 'top' | 'era' | 'clan' | 'help' | 'opening';
 let view: MapView | null = null;
 let screen: Screen = 'top';
 let scen = '1560';
@@ -53,6 +54,7 @@ export function openTitleScreen(d: TitleDeps) {
       if (el.id === 'ttl-other' && el.value) choose(el.value, true);
     });
     document.addEventListener('keydown', (e) => {
+      if (!$('title').hidden && screen === 'opening' && (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight')) { e.preventDefault(); e.stopImmediatePropagation(); nextBeat(); return; }
       if ($('title').hidden || e.key !== 'Escape') return;
       e.stopImmediatePropagation();
       back();
@@ -114,6 +116,7 @@ function choose(id: string, move: boolean) {
 }
 
 function back() {
+  if (screen === 'opening') { endOpening(); return; }
   if (screen === 'clan') go('era');
   else if (screen === 'era' || screen === 'help') go('top');
 }
@@ -126,14 +129,17 @@ function onClick(e: Event) {
   else if (act === 't-continue') { closeTitleScreen(); deps.resume(); }
   else if (act === 't-help') go('help');
   else if (act === 't-back') back();
-  else if (act === 'pick-scen') { scen = id; setPreview(); go('clan'); }
+  else if (act === 'pick-scen') { scen = id; setPreview(); if (OPENINGS[scen]?.length && openingOn() && !opSeen.has(scen)) { opSeen.add(scen); startOpening(); } else go('clan'); } // 時代を選んだら、まず序幕（同じ時代は一度だけ）
   else if (act === 'pick-clan') choose(id, true);
   else if (act === 'pick-diff') { diff = id as R.Difficulty; render(); }
   else if (act === 'start') { closeTitleScreen(); deps.start(pick, diff, scen); }
+  else if (act === 'op-next') nextBeat();
+  else if (act === 'op-skip') endOpening();
 }
 
 function render() {
   const body = $('ttl-body');
+  if (screen === 'opening') { body.innerHTML = openingHtml(); body.scrollTop = 0; $('title').scrollTop = 0; return; } // 押した札へのフォーカスで画面がずれないよう戻す
   if (screen === 'top') body.innerHTML = topHtml();
   else if (screen === 'era') body.innerHTML = eraHtml();
   else if (screen === 'help') body.innerHTML = `<div class="ttl-help"><button type="button" class="ttl-back" data-act="t-back">← 戻る</button><h2>遊び方</h2>${deps!.help(preview!)}</div>`;
@@ -197,4 +203,70 @@ function clanHtml() {
     <p class="ttl-note">${DIFF_NOTE[diff]}</p>
     <button type="button" class="seal-btn ttl-go" data-act="start">出陣</button>
   </aside>`;
+}
+
+// ───────── 序幕: シナリオの背景を、暗い日本地図の上で語る ─────────
+const OPENING_KEY = 'sengoku-opening';
+// 出すか（設定で切れる）。自動テスト（webdriver）では、明示して「on」にしたときだけ出す
+export function openingOn() {
+  try { const v = localStorage.getItem(OPENING_KEY); if (v === 'off') return false; if ((navigator as Navigator & { webdriver?: boolean }).webdriver) return v === 'on'; } catch { /* 読めなければ出す */ }
+  return true;
+}
+export function setOpeningOn(on: boolean) { try { localStorage.setItem(OPENING_KEY, on ? 'on' : 'off'); } catch { /* 記録できなくても続ける */ } }
+let opIdx = 0;
+const opSeen = new Set<string>(); // この画面で見た序幕（家選びから時代に戻って選び直しても、もう一度は出さない）
+const opBeats = () => OPENINGS[scen] ?? [];
+function startOpening() {
+  opIdx = 0;
+  screen = 'opening';
+  $('title').dataset.screen = 'opening';
+  view!.resize();
+  applyBeat(true);
+  render();
+}
+function nextBeat() {
+  if (opIdx >= opBeats().length - 1) { endOpening(); return; }
+  opIdx++; applyBeat(false); render();
+}
+// 序幕が終わったら家選びへ
+function endOpening() {
+  const v = view!;
+  v.marks = null; v.highlight = null;
+  go('clan');
+}
+// 地図を場面の場所へ寄せる（なめらかに）。光らせる家・輪・矢印も
+function applyBeat(instant: boolean) {
+  const b = opBeats()[opIdx], v = view!, st = preview!;
+  if (!b) return;
+  const byId = (id: string) => st.castles.find((c) => c.id === id);
+  v.highlight = b.light?.length ? b.light : null;
+  v.marks = { hexes: (b.mark ?? []).map((id) => byId(id)?.hex).filter((h): h is number => h !== undefined), arrows: (b.arrow ?? []).map(([a, c]) => [byId(a)?.hex, byId(c)?.hex]).filter((x): x is [number, number] => x[0] !== undefined && x[1] !== undefined) };
+  const narrow = window.innerWidth <= 760;
+  const hex = b.at ? byId(b.at)?.hex ?? centerHex() : centerHex();
+  const from = { scale: v.scale, ox: v.ox, oy: v.oy };
+  v.centerOn(hex, b.at ? (b.zoom ?? 1.4) * (narrow ? 0.85 : 1.6) : fitScale() * (narrow ? 0.9 : 1)); // 広い画面は少し寄せて場所を大きく
+  if (narrow) v.oy -= v.h * 0.16; else { v.ox += v.w * 0.12; v.oy -= v.h * 0.13; } // 下（狭い画面）・左下（広い画面）の語りの札に隠れないよう、場所を上（右上）へ寄せる
+  const to = { scale: v.scale, ox: v.ox, oy: v.oy };
+  v.invalidate();
+  if (instant || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  Object.assign(v, from);
+  const t0 = performance.now(), D = 700;
+  const step = () => {
+    const k = Math.min(1, (performance.now() - t0) / D), e = 1 - Math.pow(1 - k, 3);
+    v.scale = from.scale + (to.scale - from.scale) * e; v.ox = from.ox + (to.ox - from.ox) * e; v.oy = from.oy + (to.oy - from.oy) * e;
+    v.redraw();
+    if (k < 1 && screen === 'opening') requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function openingHtml() {
+  const bs = opBeats(), b = bs[opIdx];
+  if (!b) return '';
+  const sc = [...SCENARIOS, S1592].find((x) => x.id === scen);
+  const body = b.who
+    ? `<div class="op-who">${deps!.face(b.who, 168) || `<span class="op-noface">${esc((b.name ?? '').slice(0, 2))}</span>`}<div><div class="op-name">${esc(b.name ?? '')}<span>${esc(b.label ?? '')}</span></div><p class="op-line">「${esc(b.text)}」</p></div></div>`
+    : `<div class="op-narr">${b.head ? `<h2>${esc(b.head)}</h2>` : ''}<p>${esc(b.text)}</p></div>`;
+  return `<div class="op-top"><span class="op-scen">序幕　${esc(sc?.title ?? '')}</span><button type="button" class="ttl-back op-skip" data-act="op-skip">飛ばして家選びへ ›</button></div>
+    <div class="op-box" data-act="op-next" role="button" aria-label="次へ（Enter）">${body}
+      <div class="op-foot"><span class="op-dots">${bs.map((_, k) => `<i${k === opIdx ? ' class="on"' : k < opIdx ? ' class="done"' : ''}></i>`).join('')}</span><span class="op-more">${opIdx === bs.length - 1 ? '押すと家選びへ' : '押すと次へ'}</span></div></div>`;
 }

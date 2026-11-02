@@ -3,7 +3,7 @@ import base64, glob, io, os, re, sys
 from PIL import Image
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-roster = ''.join(open(os.path.join(root, f), encoding='utf-8').read() for f in ('src/data/roster.ts', 'src/data/scenarios.ts', 'src/data/s1582.ts', 'src/data/nanban.ts', 'src/data/envoys.ts', 'src/data/korea.ts'))
+roster = ''.join(open(os.path.join(root, f), encoding='utf-8').read() for f in ('src/data/roster.ts', 'src/data/scenarios.ts', 'src/data/s1582.ts', 'src/data/nanban.ts', 'src/data/envoys.ts', 'src/data/korea.ts', 'src/data/opening.ts'))
 ids = {name: gid for gid, name in re.findall(r"\['([a-z0-9_]+)', '([^']+)', '[a-z_]*', \d+", roster)}
 out, missing = [], []
 for f in sorted(glob.glob(os.path.join(root, 'assets/portraits/*.png'))):

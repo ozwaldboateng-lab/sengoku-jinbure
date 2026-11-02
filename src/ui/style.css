@@ -582,3 +582,50 @@ details.reg > .tbl-wrap { margin: 0 8px 8px; }
 .yoriki-list .il-opt span { font-size: 12.5px; color: var(--paper-dim); }
 .yoriki-list .warn { color: #e0a060; }
 @media (min-width: 900px) { .yoriki-list { grid-template-columns: 1fr 1fr; } }
+/* 序幕: 暗い日本地図の上の語り */
+.ttl[data-screen="opening"] #ttl-map { left: 0; width: 100%; animation: none; filter: saturate(0.75) brightness(0.72) sepia(0.15); pointer-events: none; }
+.ttl[data-screen="opening"] .ttl-veil { background: radial-gradient(ellipse at 50% 40%, rgba(8, 8, 9, 0) 35%, rgba(8, 8, 9, 0.55) 100%); }
+.ttl[data-screen="opening"] .fog { opacity: 0.5; }
+.ttl[data-screen="opening"] .ttl-brand { display: none; }
+.op-top { position: absolute; top: 16px; left: 20px; right: 20px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.op-scen { color: var(--gold); font-size: 14px; letter-spacing: 0.2em; text-shadow: 0 1px 4px #000; }
+.op-skip { position: static; }
+.op-box { position: absolute; left: max(4vw, 24px); bottom: max(6vh, 28px); width: min(560px, calc(100% - 48px)); background: rgba(10, 10, 11, 0.86); border: 1px solid var(--gold-soft); border-radius: 6px; padding: 20px 24px 14px; cursor: pointer; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); animation: op-in 0.45s ease-out; }
+.op-box:focus-visible { outline: 2px solid var(--gold); }
+@keyframes op-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.op-narr h2 { margin: 0 0 8px; font-family: "Yuji Syuku", var(--font-display); font-weight: 400; font-size: 30px; color: #f3ead6; letter-spacing: 0.12em; }
+.op-narr p { margin: 0; font-size: 16.5px; line-height: 1.9; color: var(--paper); }
+.op-who { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: start; }
+.op-who .face { width: 112px; height: 140px; border-radius: 4px; border: 1px solid var(--gold-soft); object-fit: cover; }
+.op-noface { display: grid; place-items: center; width: 112px; height: 140px; border: 1px solid var(--gold-soft); border-radius: 4px; font-size: 30px; color: var(--paper-dim); background: #1a1714; }
+.op-name { color: var(--gold); font-size: 19px; font-weight: 700; margin-bottom: 6px; }
+.op-name span { margin-left: 10px; font-size: 13px; font-weight: 400; color: var(--paper-dim); }
+.op-line { margin: 0; font-size: 17px; line-height: 1.85; color: var(--paper); }
+.op-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
+.op-dots { display: flex; gap: 5px; flex-wrap: wrap; }
+.op-dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); }
+.op-dots i.done { background: var(--gold-soft); }
+.op-dots i.on { background: var(--gold); }
+.op-more { font-size: 12px; color: var(--paper-dim); }
+@media (max-width: 760px) {
+  .op-box { left: 12px; right: 12px; width: auto; bottom: 16px; padding: 16px 16px 12px; }
+  .op-narr h2 { font-size: 24px; }
+  .op-narr p, .op-line { font-size: 15.5px; }
+  .op-who { grid-template-columns: 84px 1fr; gap: 12px; }
+  .op-who .face, .op-noface { width: 84px; height: 105px; }
+}
+/* 序幕: 広い画面では札・顔・文字を大きく */
+@media (min-width: 761px) {
+  .op-box { width: min(780px, calc(100% - 48px)); padding: 26px 32px 18px; }
+  .op-narr h2 { font-size: 40px; margin-bottom: 12px; }
+  .op-narr p { font-size: 21px; line-height: 1.85; }
+  .op-who { gap: 24px; }
+  .op-who .face, .op-noface { width: 168px; height: 210px; }
+  .op-name { font-size: 25px; margin-bottom: 10px; }
+  .op-name span { font-size: 16px; }
+  .op-line { font-size: 22px; line-height: 1.8; }
+  .op-more { font-size: 14px; }
+  .op-dots i { width: 9px; height: 9px; }
+  .op-scen { font-size: 17px; }
+  .op-skip { font-size: 16px; }
+}

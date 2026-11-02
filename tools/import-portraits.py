@@ -3,7 +3,7 @@
 import glob, os, re, shutil, sys
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src, label = sys.argv[1], sys.argv[2]
-R = ''.join(open(os.path.join(root, p), encoding='utf-8').read() for p in ('src/data/roster.ts', 'src/data/scenarios.ts', 'src/data/s1582.ts', 'src/data/nanban.ts', 'src/data/envoys.ts', 'src/data/korea.ts'))
+R = ''.join(open(os.path.join(root, p), encoding='utf-8').read() for p in ('src/data/roster.ts', 'src/data/scenarios.ts', 'src/data/s1582.ts', 'src/data/nanban.ts', 'src/data/envoys.ts', 'src/data/korea.ts', 'src/data/opening.ts'))
 names = set(re.findall(r"\['\w+', '([^']+)', '\w*', \d+", R))
 rows, bad = [], []
 for f in sorted(glob.glob(os.path.join(src, '**', '*.png'), recursive=True)):

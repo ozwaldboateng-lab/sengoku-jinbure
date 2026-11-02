@@ -136,7 +136,8 @@ export class MapView {
   flash: { hex: number; until: number } | null = null;
   onHexClick: (hex: number) => void = () => {};
   mode: MapMode = 'power';
-  highlight: string | null = null; // タイトルの家選び: この家以外を沈める
+  highlight: string | string[] | null = null; // タイトルの家選び・序幕: この家（家々）以外を沈める
+  marks: { hexes: number[]; arrows: [number, number][] } | null = null; // 序幕: 光る場所と進軍の矢印
   hexAlpha: number | null = 0.55; // 下絵を敷くときのヘックスの塗りの濃さ（null は下絵なし）
   armyStyle: ArmyStyle = 'hayashi'; // 部隊の印: 幟の林（初期）・丸（兵数の弧）。凸・駒・幟・流れ旗は試作のまま残す
   armySize: 'tier' | 'scale' = 'scale'; // 兵数で3段階か、なめらかに
@@ -366,7 +367,8 @@ export class MapView {
       const sealed = isSealed(s, h.i);
       const tint = this.mode === 'power' || sealed ? null : this.tintOf(s, h);
       let base = sealed ? FOREIGN_FILL : tint ?? (owner ? mix(C.washi, s.clans[owner].color, 0.5) : C.neutral);
-      if (this.highlight && owner !== this.highlight) base = mix(rgbToHex(base), '#1a130d', 0.5);
+      const hl = this.highlight, lit = !hl || (Array.isArray(hl) ? hl.includes(owner ?? '') : owner === hl);
+      if (hl && !lit) base = mix(rgbToHex(base), '#1a130d', 0.5);
       else if (this.highlight) base = mix(rgbToHex(base), '#fff3d0', 0.15);
       const tf = h.t === 'M' ? 0.86 : h.t === 'F' ? 0.93 : 1;
       ctx.fillStyle = tf === 1 ? base : shade(rgbToHex(base), tf);
@@ -510,6 +512,25 @@ export class MapView {
           ctx.restore();
         }
       }
+    }
+    // 序幕: 光る場所（輪）と進軍の矢印
+    if (this.marks) {
+      const t = (performance.now() % 1600) / 1600;
+      for (const [ha, hb] of this.marks.arrows) {
+        const [ax, ay] = CENTERS[ha], [bx, by] = CENTERS[hb];
+        const mx = (ax + bx) / 2 - (by - ay) * 0.15, my = (ay + by) / 2 + (bx - ax) * 0.15;
+        ctx.save(); ctx.setLineDash([HEX_SIZE * 0.4, HEX_SIZE * 0.22]); ctx.lineDashOffset = -t * HEX_SIZE * 1.24; ctx.lineWidth = Math.max(5 * px, HEX_SIZE * 0.14); ctx.lineCap = 'round';
+        ctx.strokeStyle = 'rgba(232,86,52,0.92)'; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(mx, my, bx, by); ctx.stroke();
+        const ang = Math.atan2(by - my, bx - mx), L = Math.max(16 * px, HEX_SIZE * 0.6); ctx.setLineDash([]); ctx.fillStyle = 'rgba(232,86,52,0.95)';
+        ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx - L * Math.cos(ang - 0.45), by - L * Math.sin(ang - 0.45)); ctx.lineTo(bx - L * Math.cos(ang + 0.45), by - L * Math.sin(ang + 0.45)); ctx.closePath(); ctx.fill(); ctx.restore();
+      }
+      for (const hx of this.marks.hexes) {
+        const [x, y] = CENTERS[hx];
+        ctx.save(); ctx.strokeStyle = `rgba(243,214,140,${0.95 - t * 0.7})`; ctx.lineWidth = Math.max(3.5 * px, HEX_SIZE * 0.1);
+        ctx.beginPath(); ctx.arc(x, y, HEX_SIZE * (0.75 + t * 0.9), 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = 'rgba(243,214,140,0.95)'; ctx.beginPath(); ctx.arc(x, y, HEX_SIZE * 0.72, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      }
+      this.redraw(); // 動かし続ける
     }
     // 唐入り: 渡海の路（対馬〜釜山）を点線で
     if (s.karairi?.active) {

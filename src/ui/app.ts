@@ -16,7 +16,7 @@ import {
   castleDef, dateLabel, garrisonMax, treatyOf, hexOwner, initialMorale, maxTroops, occupancy, troopMult,
 } from '../engine/state';
 import type { Army, BattleReport, Castle, Front, GameState, General, Item } from '../engine/types';
-import { openTitleScreen, titleOpen } from './title';
+import { openingOn, openTitleScreen, setOpeningOn, titleOpen } from './title';
 import { armySupply, carryOf, castleSupply, cutOff, hyoroBugyo, initStores, isPort as isCoast, storeMax, storeOf, supplyRange } from '../engine/supply';
 import { CHIAN_RAMP, EMBER_RAMP, FRONT_COLORS, HEX_ALPHA, MAP_MODES, MB, MapView, SUP, type MapMode } from './render';
 import { cancelOrder, orderAttack, orderFor, ordersAt } from '../engine/orders';
@@ -1941,6 +1941,7 @@ const TABS: Record<string, (st: GameState) => string> = {
     const saved = load(SAVE_KEY);
     return `<div class="actions" style="margin-top:0"><button class="act primary" data-act="save">保存</button><button class="act" data-act="load" ${saved ? '' : 'disabled'}>読込${saved ? `（${dateLabel(saved)}・${esc(saved.clans[saved.player].name)}）` : ''}</button><button class="act" data-act="newgame">最初から</button></div>
       <div class="actions"><button class="act" data-act="cutin-toggle" aria-pressed="${cutinOn()}">顔見せ（返事や節目のセリフ）: ${cutinOn() ? '出す' : '出さない'}</button></div>
+      <div class="actions"><button class="act" data-act="opening-toggle" aria-pressed="${openingOn()}">序幕（始める前の時代の紹介）: ${openingOn() ? '出す' : '出さない'}</button></div>
       <div class="actions"><button class="act" data-act="battle-style">合戦の部隊の印: ${UNIT_STYLE_NAME[getBattleStyle()]}</button></div>
       <div class="actions"><button class="act" data-act="army-style" aria-pressed="${view.armyStyle === 'hayashi'}">地図の部隊の印: ${view.armyStyle === 'hayashi' ? '幟の林（兵が多いほど幟が増える）' : '丸（武将名と兵数の弧）'}</button></div>
     <p class="hint">保存はこのブラウザ内のみ。毎月自動保存される。</p>`;
@@ -2298,7 +2299,7 @@ function drawInterlude(st: GameState) {
     const l = p.l;
     body = `<div class="il-quote" data-act="il-next"><div class="quote">${face(l.gen, 120) || `<span class="mon mon-q" style="width:120px;height:150px;font-size:30px;background:${l.color}">${esc(l.name.slice(0, 2))}</span>`}<div class="qbody"><div class="qname">${esc(l.name)}<span>${esc(l.label)}</span></div><p>「${esc(l.text)}」</p></div></div><div class="il-more">押すと次へ</div></div>`;
   } else {
-    body = `<p class="il-ask">${esc(p.prompt)}</p><div class="il-opts">${p.opts.map(([k, t, d]) => `<button class="il-opt" data-act="il-choose" data-id="${k}"><b>${esc(t)}</b><span>${esc(d)}</span></button>`).join('')}</div>${p.id === 'cause' ? '<p class="hint il-note">唐入りは、朝鮮と明の人々にとっては侵略の戦であり、大きな惨禍を残した。この先では渡海の兵站、義兵や水軍の抵抗、厭戦も描く。</p>' : ''}`;
+    body = `<p class="il-ask">${esc(p.prompt)}</p><div class="il-opts">${p.opts.map(([k, t, d]) => `<button class="il-opt" data-act="il-choose" data-id="${k}"><b>${esc(t)}</b><span>${esc(d)}</span></button>`).join('')}</div>${p.id === 'cause' ? '<p class="hint il-note">唐入りは、朝鮮と明の人々にとっては侵略の戦である。この戦が何を残すのか──この先では渡海の兵站、義兵や水軍の抵抗、厭戦も描く。</p>' : ''}`;
   }
   el.innerHTML = `<img class="end-art" src="${IART()[p.art]}" alt=""><div class="end-veil"></div>
     <div class="il-head"><h2>${esc(p.ch)}</h2><small>${esc(dateLabel(st))}　天下一統ののち</small></div>
@@ -2619,6 +2620,7 @@ function onModalClick(e: Event) {
     }
     toast(n ? `${n}度投じた（${fmt(spent)}貫）` : '投じられる城がなかった'); refresh(); reopen(); return;
   }
+  if (act === 'opening-toggle') { setOpeningOn(!openingOn()); reopen(); return; }
   if (act === 'rw-all') { rwAll = id === '1'; rwPage = 1; reopen(); return; }
   if (act === 'rw-more') { rwPage++; reopen(); return; }
   if (act === 'rw-bulk-kanjo' || act === 'rw-bulk-kazo' || act === 'rw-bulk-promote') {
