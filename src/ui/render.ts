@@ -1,3 +1,4 @@
+import { MINES, MINE_KIND_NAME } from '../data/economy';
 // キャンバス地図の描画と操作（パン・ズーム・ヘックス選択）
 import { BASE_LAKES, BASE_LAND, BASE_RIVERS } from '../data/basemap';
 import { bk, meibun } from '../engine/bakufu';
@@ -43,8 +44,11 @@ function shade(a: string, f: number): string {
   return `rgb(${A.map((v) => Math.max(0, Math.min(255, Math.round(v * f)))).join(',')})`;
 }
 
+// 鉱山のある城 → 印（金・銀・銅。二つあれば並べる）
+const MINE_MARK = new Map<string, string>();
+for (const [id, , k] of MINES) MINE_MARK.set(id, (MINE_MARK.get(id) ?? '') + MINE_KIND_NAME[k]);
 export type MapMode = 'power' | 'meibun' | 'chian' | 'ember' | 'front' | 'shugo' | 'supply';
-export const MAP_MODES: [MapMode, string][] = [['power', '勢力'], ['meibun', '名分'], ['chian', '治安'], ['ember', '残り火'], ['front', '方面'], ['shugo', '守護'], ['supply', '補給']];
+export const MAP_MODES: [MapMode, string][] = [['power', '勢力'], ['meibun', '名分'], ['chian', '治安'], ['ember', '残り火'], ['front', '知行'], ['shugo', '守護'], ['supply', '補給']];
 export const FRONT_COLORS = ['#d9a441', '#5f9fc4', '#b36fb0', '#6fae6a', '#d07650', '#8a86d0', '#c4b25a', '#4fb3a6'];
 export const MB = { own: '#ead9a0', ally: '#8fb0c8', ok: '#de7a5a', no: '#a39c90', kokujin: '#d8b98e' };
 const ramp = (stops: string[], v: number) => {
@@ -497,6 +501,14 @@ export class MapView {
         ctx.strokeText(c.name, x, ty);
         ctx.fillStyle = c.owner === s.player ? '#ffe7a8' : isSealed(s, c.hex) ? 'rgba(220,215,205,0.55)' : C.white;
         ctx.fillText(c.name, x, ty);
+        // 鉱山の印（金・銀・銅）
+        const mk = MINE_MARK.get(c.id);
+        if (mk) {
+          const w = ctx.measureText(c.name).width;
+          ctx.save(); ctx.font = `700 ${fs * 0.85}px ${FONT}`; ctx.textAlign = 'left';
+          ctx.strokeText(mk, x + w / 2 + 2 * px, ty); ctx.fillStyle = mk.includes('金') ? '#f2c94c' : mk.includes('銀') ? '#d9dde3' : '#d08a5a'; ctx.fillText(mk, x + w / 2 + 2 * px, ty);
+          ctx.restore();
+        }
       }
     }
     // 唐入り: 渡海の路（対馬〜釜山）を点線で

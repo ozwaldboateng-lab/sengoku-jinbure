@@ -95,7 +95,7 @@ export function migrateCorps(s: GameState) {
 
 // AI（と人事を委任したプレイヤー）: 自城の近くにいる軍団の空き枠を、同じ城や近くの待機中の武将で埋める
 export function aiFillCorps(s: GameState, clan: string, near: (a: Army) => boolean, pool?: (g: General) => boolean) {
-  const free = Object.values(s.generals).filter((g) => g.clan === clan && g.status === 'free' && s.clans[clan].leader !== g.id && (!pool || pool(g)))
+  const free = Object.values(s.generals).filter((g) => g.clan === clan && g.status === 'free' && s.clans[clan].leader !== g.id && (pool ? pool(g) : !g.liege))
     .sort((x, y) => y.lea + y.bra - (x.lea + x.bra));
   if (!free.length) return;
   const castles = s.castles.filter((c) => c.owner === clan).length;

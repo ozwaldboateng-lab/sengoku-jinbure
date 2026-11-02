@@ -115,7 +115,7 @@ export function monthlyBushi(s: GameState) {
     const mine = C.id === s.player;
     // 大きすぎる功
     for (const g of vassalsOf(s, C.id)) {
-      if (g.outer || g.kin || fameOf(g) < R.KAN_FAME || onOf(g) >= R.KAN_ON || rand(s) >= R.KAN_CHANCE) continue;
+      if (g.outer || g.kin || g.kan || fameOf(g) < R.KAN_FAME || onOf(g) >= R.KAN_ON || rand(s) >= R.KAN_CHANCE) continue;
       const from = kanGiver(s, g);
       if (mine) { if (!s.kanOffer) { s.kanOffer = { gen: g.id, from, turn: s.turn }; addLog(s, `${g.name}に${giverName(s, from)}から官の誘いが来ている。`, 'info', true); } }
       else if (rand(s) < 0.5) g.outer = from; else g.on = Math.max(0, onOf(g) - R.KAN_SCOLD);

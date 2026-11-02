@@ -1,14 +1,24 @@
 // お金（貫）: 商業収入・兵糧の売買・鉄砲・名物
 import { onGift } from './on';
-import { COMMERCE_BONUS, GUN_SOURCES, MEIBUTSU, SAKAI } from '../data/economy';
+import { COMMERCE_BONUS, GUN_SOURCES, MEIBUTSU, MINES, PRODUCTS, SAKAI, type ProductKind } from '../data/economy';
 import { CASTLE_TYPE, TSUME } from '../data/castles';
 import { NEIGHBORS } from './map';
 import * as R from './rules';
-import { addLog, castleAt, clanArmies, clanCastles, clanName, drillOf, maxTroops } from './state';
+import { aiInvest, taxDef } from './invest';
+import { addLog, castleAt, clanArmies, clanCastles, clanName, drillOf, hostile, maxTroops, occupancy } from './state';
 import type { Army, Castle, GameState, General, Item } from './types';
 
-export const castleCom = (c: Castle) => c.baseCom * c.cdev * (1 + (c.kiri ?? 0) * R.KIRI_COM);
-export const clanIncome = (s: GameState, clan: string) => Math.round(clanCastles(s, clan).reduce((t, c) => t + castleCom(c), 0));
+// 商業（特産品の商いはその城の商業の開発度に応じて上乗せ）
+export const productsAt = (c: Castle) => PRODUCTS.filter(([id]) => id === c.id);
+export const minesAt = (c: Castle) => MINES.filter(([id]) => id === c.id);
+export const castleCom = (c: Castle) => (c.baseCom + productsAt(c).reduce((t, [, , k, v]) => t + (k === 'com' ? v : 0), 0)) * c.cdev * (1 + (c.kiri ?? 0) * R.KIRI_COM);
+// 鉱山の産出（包囲中は止まり、治安が低いと減る）。知行に関わらず当家に入る
+export const castleMine = (s: GameState, c: Castle) => { const m = minesAt(c); if (!m.length || !c.owner) return 0; if (besiegedNow(s, c)) return 0; return Math.round(m.reduce((t, x) => t + x[3], 0) * R.mineChian(c.chian)); };
+export const clanMine = (s: GameState, clan: string) => clanCastles(s, clan).reduce((t, c) => t + castleMine(s, c), 0);
+export const clanIncome = (s: GameState, clan: string) => Math.round(clanCastles(s, clan).reduce((t, c) => t + castleCom(c), 0) * taxDef(s, clan).income + clanMine(s, clan)); // 商いは年貢の率に従う（鉱山は従わない）
+// 特産品の効き目（家に一つでもあれば）
+export const hasProduct = (s: GameState, clan: string | null, kind: ProductKind) => !!clan && PRODUCTS.some(([id, , k]) => k === kind && s.castles.some((c) => c.id === id && c.owner === clan));
+function besiegedNow(s: GameState, c: Castle) { const occ = occupancy(s); return NEIGHBORS[c.hex].some((j) => { const o = occ.get(j); return !!o && hostile(s, o.clan, c.owner); }); }
 const owns = (s: GameState, clan: string, castleId: string) => s.castles.some((c) => c.id === castleId && c.owner === clan);
 
 // ───────── 兵糧の売買 ─────────
@@ -29,7 +39,7 @@ export function sellRice(s: GameState, clan: string, koku: number): boolean {
 
 // ───────── 鉄砲 ─────────
 export const hasGunSource = (s: GameState, clan: string) => GUN_SOURCES.some((id) => owns(s, clan, id));
-export const gunPrice = (s: GameState, clan: string) => (hasGunSource(s, clan) ? R.GUN_PRICE_SOURCE : R.GUN_PRICE);
+export const gunPrice = (s: GameState, clan: string) => Math.round((hasGunSource(s, clan) ? R.GUN_PRICE_SOURCE : R.GUN_PRICE) * (hasProduct(s, clan, 'iron') ? R.IRON_GUN : 1) * 10) / 10;
 export const clanGuns = (s: GameState, clan: string) => s.clans[clan].guns + clanArmies(s, clan).reduce((t, a) => t + (a.guns ?? 0), 0);
 export function buyGuns(s: GameState, clan: string, n: number): boolean {
   const cost = n * gunPrice(s, clan);
@@ -157,6 +167,7 @@ export function seizeItems(s: GameState, loser: string, by: string | null) {
 export function aiEconomy(s: GameState, clan: string) {
   aiTrade(s, clan);
   aiEquip(s, clan);
+  if (!s.clans[clan].foreign) aiInvest(s, s.clans[clan], clanIncome(s, clan)); // 余った金を城に回す
 }
 // 商い: 兵糧の売買・鉄砲の購入と配備・名物の購入
 export function aiTrade(s: GameState, clan: string) {

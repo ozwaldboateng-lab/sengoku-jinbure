@@ -5,6 +5,7 @@ import { HEXES } from './map';
 import type { Target } from './move';
 import * as R from './rules';
 import { castleAt, castleKoku, rand, drillOf, personalCap } from './state';
+import { hasProduct } from './money';
 import { defenderSupports, supportArmies } from './combat';
 import { tsukaiLabel, tsukaiOf } from './ranks';
 import type { Army, GameState, General } from './types';
@@ -80,6 +81,7 @@ export interface Tactical {
   fire: Record<number, number>; // 燃えているヘックス → 残り刻数
   units: TUnit[]; turn: number; maxTurn: number; phase: Side;
   attackerClan: string; defenderClan: string | null;
+  horse?: string[]; // 馬の産地を持つ家（突撃の自軍の損害が減る）
   primaryA: number; primaryD: number | null; castle: number | null; hex: number;
   armiesA: number[]; armiesD: number[];
   log: string[]; deaths: string[]; captures: { general: string; by: string }[];
@@ -211,7 +213,7 @@ function genSiege(s: GameState, t: Tactical, cx: number, cy: number) {
   const gateMarks: number[] = [];
   const c = s.castles[t.castle!];
   const n = t.rings = R.CASTLE_KIND[c.kind ?? 'hira'].rings;
-  t.cdef = R.CASTLE_KIND[c.kind ?? 'hira'].def / R.CASTLE_DEF_BASE;
+  t.cdef = (R.CASTLE_KIND[c.kind ?? 'hira'].def + (c.fort ?? 0) * R.FORT_DEF) / R.CASTLE_DEF_BASE;
   for (let i = 0; i < t.tiles.length; i++) {
     const d = tDist(t, i, center);
     if (d === 0) t.tiles[i] = 'K';
@@ -251,7 +253,7 @@ export function createTactical(s: GameState, a: Army, target: Target, playerSide
   const w = kind === 'siege' ? (big ? 19 : 17) : 15, h = kind === 'siege' ? (big ? 15 : 13) : 11;
   const defClan = target.kind === 'army' ? target.army.clan : s.castles[target.castle].owner;
   const t: Tactical = {
-    kind, w, h, tiles: genField(s, w, h, HEXES[defHex].t), gates: {}, fire: {}, gateMax: castle ? Math.round((800 + castleKoku(castle) * 60) * R.CASTLE_KIND[castle.kind ?? 'hira'].gate * (govTrait(s, castle) === 'chikujo' ? CHIKUJO_GATE : 1)) : 0,
+    kind, w, h, tiles: genField(s, w, h, HEXES[defHex].t), gates: {}, fire: {}, gateMax: castle ? Math.round((800 + castleKoku(castle) * 60) * R.CASTLE_KIND[castle.kind ?? 'hira'].gate * (1 + (castle.fort ?? 0) * R.FORT_GATE) * (govTrait(s, castle) === 'chikujo' ? CHIKUJO_GATE : 1)) : 0,
     units: [], turn: 1, maxTurn: kind === 'siege' ? TR.SIEGE_TURNS + (big ? 5 : 0) : TR.FIELD_TURNS, phase: 'A',
     attackerClan: a.clan, defenderClan: defClan, primaryA: a.id, primaryD: target.kind === 'army' ? target.army.id : null,
     castle: castle?.i ?? null, hex: defHex, armiesA: [], armiesD: [], log: [], deaths: [], captures: [], start: {},
@@ -320,6 +322,7 @@ export function createTactical(s: GameState, a: Army, target: Target, playerSide
     for (const u of t.units) if (u.side === 'D' && u.role === 'garrison') u.morale = Math.max(0.1, u.morale - TR.NAIO_MORALE);
     t.log.push('内応者が城門を開いた！城兵は動揺している。');
   }
+  t.horse = [t.attackerClan, t.defenderClan].filter((c): c is string => !!c && hasProduct(s, c, 'horse'));
   return t;
 }
 
@@ -375,6 +378,7 @@ function resumeSiege(s: GameState, save: NonNullable<GameState['sieges']>[number
   startPhase(t, 'A');
   const store = castle.store ?? 0;
   t.log = [`${castle.name}攻め、包囲${save.months + 1}か月目。先月の続きから（門の傷はそのまま）。城兵${Math.round(castle.garrison)}${store <= 0 ? '・城の兵糧は尽きている' : ''}。`];
+  t.horse = [t.attackerClan, t.defenderClan].filter((c): c is string => !!c && hasProduct(s, c, 'horse'));
   return t;
 }
 
@@ -540,7 +544,7 @@ export function preview(t: Tactical, u: TUnit, e: TUnit, charge: boolean, ranged
   const atk = attackPower(t, u, e, charge && !bow, noFlank) * (gun ? gunMult(t, u) : 1) * (u.hidden ? TR.AMBUSH_HIDDEN : 1);
   const k = gun ? TR.GUN : bow ? TR.BOW : TR.DMG;
   const dealt = Math.round(Math.min(e.troops * TR.CAP, (k * atk) / (tdef(t, e.tile) * e.def)));
-  const taken = bow ? 0 : Math.round(Math.min(u.troops * TR.CAP, (TR.COUNTER * power(t, e) * (charge ? TR.CHARGE_SELF : 1)) / (u.def * (e.routed ? 3 : 1))));
+  const taken = bow ? 0 : Math.round(Math.min(u.troops * TR.CAP, (TR.COUNTER * power(t, e) * (charge ? (u.clan && t.horse?.includes(u.clan) ? R.HORSE_CHARGE_SELF : TR.CHARGE_SELF) : 1)) / (u.def * (e.routed ? 3 : 1))));
   return { dealt, taken };
 }
 

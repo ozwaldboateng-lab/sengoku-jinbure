@@ -7,7 +7,7 @@ export type Scene =
   | 'allianceYes' | 'allianceNo' | 'marriageYes' | 'marriageNo' | 'surrenderYes' | 'surrenderNo'
   | 'plotOk' | 'plotNaio' | 'plotNg' | 'gift' | 'promote'
   | 'deathBattle' | 'deathSick' | 'succession' | 'successionYoung' | 'genpuku' | 'desert'
-  | 'envoyAlliance' | 'envoyMarriage' | 'reward' | 'kanjo' | 'leaveNeglect' | 'betray' | 'rebel' | 'testament' | 'exiled' | 'returnHead' | 'quarrel' | 'follow' | 'kan';
+  | 'envoyAlliance' | 'envoyMarriage' | 'reward' | 'kanjo' | 'leaveNeglect' | 'betray' | 'rebel' | 'testament' | 'exiled' | 'returnHead' | 'quarrel' | 'follow' | 'kan' | 'chigyo' | 'ninkan';
 
 export const SCENE_LABEL: Record<Scene, string> = {
   recruitYes: '登用に応じる', recruitNo: '登用を拒む', release: '解き放たれる', execute: '処断', roninYes: '仕官する', roninNo: '仕官を断る',
@@ -16,7 +16,7 @@ export const SCENE_LABEL: Record<Scene, string> = {
   plotOk: '調略の首尾', plotNaio: '内応の約束', plotNg: '調略の不首尾', gift: '下賜', promote: '取り立て',
   deathBattle: '討死', deathSick: '病没', succession: '家督相続', successionYoung: '家督相続', genpuku: '元服', desert: '出奔',
   envoyAlliance: '同盟の申し入れ', envoyMarriage: '婚姻の申し入れ',
-  reward: '加増', kanjo: '感状', leaveNeglect: '出奔', betray: '寝返り', rebel: '謀反', testament: '遺言', exiled: '追放', returnHead: '帰参を願う', quarrel: '喧嘩', follow: '去就', kan: '官の誘い',
+  reward: '加増', kanjo: '感状', leaveNeglect: '出奔', betray: '寝返り', rebel: '謀反', testament: '遺言', exiled: '追放', returnHead: '帰参を願う', quarrel: '喧嘩', follow: '去就', kan: '官の誘い', chigyo: '知行', ninkan: '任官',
 };
 
 export const LINES: Record<Scene, Record<Temper, string[]>> = {
@@ -229,6 +229,18 @@ export const LINES: Record<Scene, Record<Temper, string[]>> = {
     wise: ['{leader}殿の見立てに乗りまする。この家に先はござらぬ。', '{leader}殿と共に参る。'],
     gentle: ['{leader}殿を一人で行かせるわけにはまいりませぬ。', '長い付き合いでござる。{leader}殿について参ります。'],
     steady: ['{leader}と共に去る。決めたことだ。', '{leader}に従う。御免。'],
+  },
+  chigyo: {
+    bold: ['{castle}をわしに！ 城持ちになったからには、存分に暴れてみせますぞ！', '{castle}、確かに預かった。この城、誰にも渡さぬ。'],
+    wise: ['{castle}を賜るとは。民を治め、兵を養い、ご恩に報いまする。', '城を持つは重き務め。{castle}を必ず富ませてご覧に入れよう。'],
+    gentle: ['{castle}を……身に余るお計らい。郎党どもも泣いて喜びましょう。', 'ありがたき幸せ。{castle}の民を、我が子のように慈しみまする。'],
+    steady: ['{castle}、謹んで拝領いたす。', '知行のご恩、奉公をもってお返しいたしまする。'],
+  },
+  ninkan: {
+    bold: ['{kan}か！ わしの名も上がったものよ。', '{kan}……ふん、悪くない響きだ。'],
+    wise: ['{kan}に推していただくとは。家の名に恥じぬ働きをいたしまする。', '{kan}の名、殿の御威光あってのものと心得まする。'],
+    gentle: ['わたくしごときが{kan}とは……身に余りまする。', '{kan}の名、亡き父にも聞かせとうございました。'],
+    steady: ['{kan}、謹んでお受けいたす。', 'ご推挙のご恩、忘れませぬ。'],
   },
   kan: {
     bold: ['官をくれると言うのだ。もらって何が悪い！', '働きを認めてくれる所があるのよ。'],

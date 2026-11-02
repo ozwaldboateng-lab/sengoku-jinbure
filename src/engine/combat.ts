@@ -2,7 +2,7 @@
 // 1か月の会戦を最大5ラウンドで解決する。損害は「相手の戦闘力」に比例（大軍ほど与える損害が大きく、受ける割合が小さい）。
 import { HEXES, NEIGHBORS, hexDist } from './map';
 import { awardBattle } from './ranks';
-import { loseGuns } from './money';
+import { hasProduct, loseGuns } from './money';
 import { ikkiCasualty } from './ikki';
 import * as R from './rules';
 import { captureCastle, captureGeneral, killGeneral, naioActive, removeArmy } from './ops';
@@ -157,7 +157,7 @@ export function battle(s: GameState, a: Army, t: Target, charge: boolean, joined
     // 合ごとの振れ幅 ±15%
     sa *= 0.85 + rand(s) * 0.3; sd *= 0.85 + rand(s) * 0.3;
     const dLoss = Math.round(Math.min(D.troops * dCap, (R.DAMAGE_K * sa) / (defMult * D.def)));
-    const aLoss = Math.round(Math.min(A.troops * R.ROUND_LOSS_CAP, (R.DAMAGE_K * sd * (charge ? R.CHARGE_SELF_LOSS : 1)) / A.def));
+    const aLoss = Math.round(Math.min(A.troops * R.ROUND_LOSS_CAP, (R.DAMAGE_K * sd * (charge ? (hasProduct(s, a.clan, 'horse') ? R.HORSE_CHARGE_SELF : R.CHARGE_SELF_LOSS) : 1)) / A.def));
     const aFrac = A.troops ? aLoss / A.troops : 1, dFrac = D.troops ? dLoss / D.troops : 1;
     A.troops -= aLoss; D.troops -= dLoss;
     const ratio = sa / (sa + sd);

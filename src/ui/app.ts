@@ -1,7 +1,7 @@
 // 画面の組み立てと操作
 import { defenderSupports, estimate, supportArmies } from '../engine/combat';
 import { endTurn } from '../engine/game';
-import { HEXES, PROVINCES, NEIGHBORS, TERRAIN_NAME, hexCenter, isForeignHex } from '../engine/map';
+import { HEXES, PROVINCES, NEIGHBORS, TERRAIN_NAME, hexCenter, hexDist, isForeignHex } from '../engine/map';
 import { attackTargets, pathTo, reachable, type Target } from '../engine/move';
 import { canPlot, capital, checkVictory, doPlot, naioActive, plotChance, disband, execute, formArmy, moveArmy, recruit, recruitChance, recruitRonin, release, roninChance } from '../engine/ops';
 import * as R from '../engine/rules';
@@ -15,7 +15,7 @@ import {
   addLog, hostile, armyCombat, armyStats, ashiOf, clanAshi, drillOf, castleAt, castleKoku, clanArmies, clanCapacity, clanCastles, clanKoku, clanName, clanTroops, clanUpkeep,
   castleDef, dateLabel, garrisonMax, treatyOf, hexOwner, initialMorale, maxTroops, occupancy, troopMult,
 } from '../engine/state';
-import type { Army, BattleReport, Castle, GameState, General, Item } from '../engine/types';
+import type { Army, BattleReport, Castle, Front, GameState, General, Item } from '../engine/types';
 import { openTitleScreen, titleOpen } from './title';
 import { armySupply, carryOf, castleSupply, cutOff, hyoroBugyo, initStores, isPort as isCoast, storeMax, storeOf, supplyRange } from '../engine/supply';
 import { CHIAN_RAMP, EMBER_RAMP, FRONT_COLORS, HEX_ALPHA, MAP_MODES, MB, MapView, SUP, type MapMode } from './render';
@@ -24,13 +24,17 @@ import { breakTreaty, clanPower, DIP, DIP_NAME, evaluate, neighbors, propose, se
 import { getBattleStyle, openBattle, setBattleStyle, UNIT_STYLE_NAME, type UnitStyle } from './battle';
 import { setBattleHook } from '../engine/hooks';
 import { PORTRAITS } from '../data/portraits';
-import { besieged, devRate } from '../engine/economy';
+import { besieged, comCap, devRate, enactRakuichi, rakuichiBlock } from '../engine/economy';
+import { MINE_KIND_NAME, PRODUCT_KIND_NAME } from '../data/economy';
+import { REGION_ORDER, regionOf } from '../data/regions';
+import { FORT_NAME, TAX, fortBlock, fortCost, fortMonths, fortOf, invest, investBlock, investCost, setTax, shindenBlock, shindenCost, shindenDone, startFort, startShinden, taxOf, type InvestRole, type Tax } from '../engine/invest';
 import { chianDelta, mobilizeDrop, mobilizeRate } from '../engine/policy';
 import { buyCourt, courtBlock, courtName, courtOf, holderOf } from '../engine/court';
+import { appointShugodai, dismissShugodai, kanBlock, kanCost, kanName, kanOf, recommendKan, shugodaiBlock, shugodaiOf, shugoProvs } from '../engine/kan';
 import { DELEGATE_NAME, delegateOf, type DelegateKey } from '../engine/delegate';
 import { ikkiBlock, ikkiSize, raiseIkki } from '../engine/ikki';
 import {
-  armGuns, bonusOf, buyGuns, buyItem, buyRice, castleCom, clanGuns, clanIncome, clanItems, equip, gunCap, gunPrice, hasGunSource, itemLabel, itemPrice, marketItems, migrateMoney,
+  armGuns, bonusOf, buyGuns, buyItem, buyRice, castleCom, castleMine, minesAt, productsAt, clanMine, hasProduct, clanGuns, clanIncome, clanItems, equip, gunCap, gunPrice, hasGunSource, itemLabel, itemPrice, marketItems, migrateMoney,
   ricePrice, sellRice, unequip, ashiRoom, hireAshi } from '../engine/money';
 import { ageOf, migrateLife } from '../engine/life';
 import { applyShioki } from '../engine/shioki';
@@ -54,12 +58,15 @@ import { SEKAIZU_ART } from '../data/sekaizu';
 import { BUSAN_ART, FUYU_ART, GIHEI_ART, KOWA_ART, NAGOYA_ART, SHIMAKAGE_ART } from '../data/karairiArt';
 import { HYOJO_ART, MINATO_ART } from '../data/scenes';
 import { SCENE_LABEL } from '../data/lines';
+import { absorb as absorbClan } from '../engine/diplomacy';
 import {
-  createFront, delegatedArmy, dissolveFront, frontById, frontMax, frontName, frontOfArmy, frontOfCastle, frontsOf, leaderCands, setArmyFront, setFrontCastle, setFrontPolicy, targetCands, targetLabel,
+  baishinBlock, baishinOf, delegatedArmy, dissolveFront, fiefCap, fiefKoku, fiefOf, frontArmies, frontById, frontName, frontOfArmy, frontOfCastle, frontsOf, grantBlock, grantCastle, heirCands as fiefHeirCands,
+  leaderCands, makeBaishin, makeDirect, migrateFiefs, policyOf, removeCastle, setFrontBoss, setFrontPolicy, setHeir, targetCands, targetLabel, vacantFiefs,
 } from '../engine/fronts';
 import {
   answerMission, armCannon, baptized, buyShipCannon, buyShipGuns, buyShipItem, clanCannon, clanPorts, initNanban, isPort, misDef, missionaryActive, missionBlock, missionHome, missionLabel,
   misName, nanbanItemPrice, portName, portOwner, setMission, shipCannon, shipGuns, shipItems, shipOdds, shipsOf,
+  isKaraPort, karaPortName, karasenAt, silverTrade,
 } from '../engine/nanban';
 import { MISSIONARIES } from '../data/nanban';
 import { fame, hire, offerChance, refuse } from '../engine/ronin';
@@ -88,7 +95,7 @@ function store(key: string, value: string | null) {
   try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); return true; } catch { return false; }
 }
 function load(key: string): GameState | null {
-  try { const t = localStorage.getItem(key); const st = t ? (JSON.parse(t) as GameState) : null; if (st) { migrateRanks(st); migrateMoney(st); migrateLife(st); migrateCorps(st); initNanban(st); migrateOn(st); initBonds(st); migrateBakufu(st); migrateMap(st); initStores(st); st.revealed = (st.revealed ?? []).filter((id) => st.generals[id]); } return st; } catch { return null; }
+  try { const t = localStorage.getItem(key); const st = t ? (JSON.parse(t) as GameState) : null; if (st) { migrateRanks(st); migrateMoney(st); migrateLife(st); migrateCorps(st); initNanban(st); migrateOn(st); migrateFiefs(st); initBonds(st); migrateBakufu(st); migrateMap(st); initStores(st); st.revealed = (st.revealed ?? []).filter((id) => st.generals[id]); } return st; } catch { return null; }
 }
 
 export function boot(saved?: { state?: GameState }) {
@@ -133,6 +140,13 @@ export function boot(saved?: { state?: GameState }) {
   }, true);
   $('panel').addEventListener('click', onPanelClick);
   $('modal-body').addEventListener('click', onModalClick);
+  // 地方ごとにたたんだ一覧の開閉を覚える（描き直しても保つ）
+  $('modal-body').addEventListener('toggle', (e) => { const d = e.target as HTMLDetailsElement; const k = d.querySelector('summary')?.dataset.id; if (k) regOpen.set(k, d.open); }, true);
+  // 城の札: 地図で選んだ城を家臣に与える
+  $('panel').addEventListener('change', (e) => {
+    const el = e.target as HTMLSelectElement;
+    if (el.dataset.fgrantc && el.value && s) { const c = s.castles[+el.dataset.fgrantc], g = s.generals[el.value]; const why = grantBlock(s, g, c); if (why) toast(why); else { grantCastle(s, g, c); toast(`${g.name}に${c.name}を与えた`); cutin(s, g, 'chigyo', { castle: c.name }); } refresh(); }
+  });
   $('modal-body').addEventListener('change', (e) => {
     const t0 = e.target as HTMLSelectElement;
     if (t0.id === 'sel-ninja-head' && s) { setNinjaHead(s, s.player, t0.value || null); openMenu(); return; }
@@ -152,7 +166,8 @@ export function boot(saved?: { state?: GameState }) {
       if (army && g && !attachBlock(s, army, pid, g)) { attach(s, army, pid, g); toast(`${g.name}を${s.generals[pid].name}の下に置いた`); }
       refresh(); openMenu();
     }
-    if (el.dataset.gov && el.value && s) {
+    if (el.dataset.gov && el.value && s && frontOfCastle(s, s.castles[+el.dataset.gov]) && !frontOfCastle(s, s.castles[+el.dataset.gov])!.vacant) { toast('領の城の城主は領主が決める'); reopen(); }
+    else if (el.dataset.gov && el.value && s) {
       const c = s.castles[+el.dataset.gov], g = s.generals[el.value];
       if (c.governor) s.generals[c.governor].status = 'free';
       c.governor = g.id; g.status = 'governor'; g.loc = c.i;
@@ -168,8 +183,13 @@ export function boot(saved?: { state?: GameState }) {
     }
     if (el.dataset.fpol && s) { const f = frontById(s, +el.dataset.fpol); if (f) { setFrontPolicy(s, f, el.value as 'attack' | 'defend' | 'build'); toast(`${frontName(s, f)}の方針を${R.FRONT_POLICY_NAME[f.policy]}にした`); } refresh(); openMenu(); }
     if (el.dataset.ftgt !== undefined && s) { const f = frontById(s, +el.dataset.ftgt); if (f) { setFrontPolicy(s, f, 'attack', el.value || null); toast(`${frontName(s, f)}の目標: ${targetLabel(s, f)}`); } refresh(); openMenu(); }
-    if (el.dataset.fcastle && s) { const c = s.castles[+el.dataset.fcastle], f = frontById(s, +el.value); if (f) setFrontCastle(s, f, c, true); else { const o = frontOfCastle(s, c); if (o) setFrontCastle(s, o, c, false); } refresh(); openMenu(); }
-    if (el.dataset.farmy && s) { const a = s.armies[+el.dataset.farmy]; if (a) { setArmyFront(s, a, frontById(s, +el.value) ?? null); cancelOrder(s, a.id); } refresh(); openMenu(); }
+    if (el.dataset.vq !== undefined && s) { vasFilter.q = el.value.trim(); vasFilter.page = 1; reopen(); }
+    if (el.dataset.vrank !== undefined && s) { vasFilter.rank = el.value; vasFilter.page = 1; reopen(); }
+    if (el.dataset.sgd && el.value && s) { const g = s.generals[el.dataset.sgd]; const why = shugodaiBlock(s, g, el.value); if (why) toast(why); else { appointShugodai(s, g, el.value); toast(`${g.name}を${el.value}の守護代に任じた`); cutin(s, g, 'ninkan', { kan: `${el.value}守護代` }); } refresh(); reopen(); }
+    if (el.dataset.sgdp && el.value && s) { const g = s.generals[el.value], pv = el.dataset.sgdp; const why = shugodaiBlock(s, g, pv); if (why) toast(why); else { appointShugodai(s, g, pv); toast(`${g.name}を${pv}の守護代に任じた`); cutin(s, g, 'ninkan', { kan: `${pv}守護代` }); } refresh(); reopen(); }
+    if (el.dataset.fbaiG && el.value && s) { const f = frontById(s, +el.value), g = s.generals[el.dataset.fbaiG]; if (f && g) { const why = baishinBlock(s, g, f); if (why) toast(why); else { makeBaishin(s, g, f); toast(`${g.name}を${s.generals[f.leader].name}の陪臣とした`); } } refresh(); reopen(); }
+    if (el.dataset.fbai && el.value && s) { const f = frontById(s, +el.dataset.fbai), g = s.generals[el.value]; if (f && g) { const why = baishinBlock(s, g, f); if (why) toast(why); else { makeBaishin(s, g, f); toast(`${g.name}を${s.generals[f.leader].name}の陪臣とした`); } } refresh(); reopen(); }
+    if (el.dataset.fgrant && el.value && s) { const g = s.generals[el.dataset.fgrant], c = s.castles[+el.value]; const why = grantBlock(s, g, c); if (why) toast(why); else { grantCastle(s, g, c); toast(`${g.name}に${c.name}を与えた`); cutin(s, g, 'chigyo', { castle: c.name }); } refresh(); reopen(); }
     if (el.dataset.govg && el.value && s) {
       const c = s.castles[+el.value], g = s.generals[el.dataset.govg];
       if (c.governor) s.generals[c.governor].status = 'free';
@@ -199,6 +219,7 @@ export function boot(saved?: { state?: GameState }) {
   window.claude?.hot?.snapshot?.(() => ({ state: s }));
   (window as unknown as { __sengoku: unknown }).__sengoku = {
     get state() { return s; }, view, center: hexCenter,
+    surrender: (loser: string) => { if (s) { absorbClan(s, s.player, loser); refresh(); } }, // テスト用: 降伏勧告が通ったことにする
     supply: (id: number) => (s && s.armies[id] ? armySupply(s, s.armies[id]) : null), neighbors: (h: number) => NEIGHBORS[h],
     // テスト用: 自軍の部隊で隣の敵部隊と合戦を開く
     battle: (armyId: number, enemyId: number) => { const st = s!; const e = st.armies[enemyId]; return openBattle(st, st.armies[armyId], { kind: 'army', hex: e.hex, army: e }).then(() => refresh()); },
@@ -273,7 +294,7 @@ function renderLegend() {
   else if (view.mode === 'ember') el.innerHTML = rampBar(EMBER_RAMP, '0', '60+', '残り火') + '<span>強いと蜂起しやすい</span>';
   else if (view.mode === 'front') {
     const fs = (st.fronts ?? []).filter((f) => st.generals[f.leader]);
-    el.innerHTML = (fs.length ? fs.map((f) => sw(FRONT_COLORS[f.id % FRONT_COLORS.length], `${esc(st.generals[f.leader].name)}方面`)).join('') : '<span>方面軍団なし</span>') + sw('#e9dcc0', '直轄') + sw('#8c8577', '他家');
+    el.innerHTML = (fs.length ? fs.map((f) => sw(FRONT_COLORS[f.id % FRONT_COLORS.length], esc(frontName(st, f)))).join('') : '<span>城持ちなし</span>') + sw('#e9dcc0', '直轄（蔵入地）') + sw('#8c8577', '他家');
   } else if (view.mode === 'supply') {
     el.innerHTML = sw(SUP.home, '本国') + sw(SUP.sea, '飛び地（海路）') + sw(SUP.enclave, '飛び地') + sw(SUP.near, '補給が届く') + sw(SUP.far, '届くが遠い') + sw(SUP.none, '届かない') + `<span>届く距離 ${supplyRange(st, st.player)}</span>`;
   } else if (view.mode === 'shugo') {
@@ -475,9 +496,9 @@ function armyPanel(a: Army | undefined) {
   if (here) parts.push(`<div class="actions" style="margin-top:4px"><button class="act" data-act="view-castle" data-id="${here.i}">${esc(here.name)}を見る${!mine && here.owner !== st.player ? '（調略）' : ''}</button></div>`);
   if (a.ikki) parts.push(`<p class="hint">一向一揆。家の指図は受けず、蜂起した${esc(st.castles[a.ikki.castle].name)}へ自ら攻めかかる。${Math.max(0, a.ikki.until - st.turn)}か月で散る。</p>`);
   if (mine && !st.over && !a.ikki && delegatedArmy(st, a)) {
-    const f = frontOfArmy(st, a);
-    parts.push(`<div class="est" style="margin-top:6px">${f ? `<b>${esc(frontName(st, f))}</b>の部隊（${R.FRONT_POLICY_NAME[f.policy]}${f.policy === 'attack' ? `・目標 ${esc(targetLabel(st, f))}` : ''}）。` : '軍事を委任中。'}出陣・移動・編成は評定終了のときに${f ? '軍団長' : 'AI'}が決める。</div>`);
-    parts.push(`<div class="actions"><button class="act" data-act="open-fronts">${f ? '方面軍団を見る（人事）' : '委任を見る（内政）'}</button><button class="act" data-act="next">次の部隊 (N)</button></div>`);
+    const f0 = frontOfArmy(st, a), f = f0 ? policyOf(st, f0) : undefined;
+    parts.push(`<div class="est" style="margin-top:6px">${f ? `<b>${esc(frontName(st, f))}</b>の部隊（${R.FRONT_POLICY_NAME[f.policy]}${f.policy === 'attack' ? `・目標 ${esc(targetLabel(st, f))}` : ''}${f0?.boss ? `・${esc(frontName(st, frontById(st, f0.boss)!))}の与力` : ''}）。` : '軍事を委任中。'}出陣・移動・編成は評定終了のときに${f ? '領主' : 'AI'}が決める。</div>`);
+    parts.push(`<div class="actions"><button class="act" data-act="open-fronts">${f ? '知行を見る（人事）' : '委任を見る（内政）'}</button><button class="act" data-act="next">次の部隊 (N)</button></div>`);
   }
   if (mine && !st.over && !a.ikki && !delegatedArmy(st, a)) {
     const c = castleAt(st, a.hex);
@@ -517,7 +538,7 @@ function armyPanel(a: Army | undefined) {
 }
 
 function freeGenerals(): General[] {
-  return Object.values(s!.generals).filter((g) => g.clan === s!.player && g.status === 'free').sort((a, b) => capOf(b) - capOf(a) || b.lea + b.bra - (a.lea + a.bra));
+  return Object.values(s!.generals).filter((g) => g.clan === s!.player && g.status === 'free' && !g.liege).sort((a, b) => capOf(b) - capOf(a) || b.lea + b.bra - (a.lea + a.bra));
 }
 // 身分を含めた兵数の上限
 const capOf = (g: General) => Math.round(((3000 + g.lea * 100) * troopMult(s!, g)) / 100) * 100;
@@ -530,13 +551,29 @@ function castlePanel(c: Castle) {
   const parts = [`<div class="ph">${mon(c.name.replace(/城$|館$|御所$|御堂$/, ''), color)}<div><h2>${esc(c.name)}</h2><div class="sub">${esc(clanName(st, c.owner))}${c.owner ? '家' : '（独立）'}　${esc(PROVINCES[HEXES[c.hex].p].name)}</div></div></div>`];
   const kd = R.CASTLE_KIND[c.kind ?? 'hira'];
   parts.push(`<dl class="kv"><dt>縄張り</dt><dd>${kd.name}${c.tsume ? `（詰城 ${esc(c.tsume)}）` : ''}　守り×${castleDef(c).toFixed(1)}・曲輪${'一二三'[kd.rings - 1]}重</dd><dt>石高</dt><dd>${man(castleKoku(c))}</dd><dt>開発</dt><dd>${Math.round(c.dev * 100)}%${c.owner ? `<span class="hint" style="margin:0">　月+${(devRate(st, c) * 100).toFixed(2)}%${c.dev >= R.devCap(c.chian) ? `（上限${Math.round(R.devCap(c.chian) * 100)}%）` : besieged(st, c) ? '（包囲中）' : !c.governor ? '（城主不在で半分）' : ''}</span>` : ''}</dd>
-    <dt>商業</dt><dd>月${fmt(castleCom(c))}貫（${Math.round(c.cdev * 100)}%${c.owner ? `　月+${(devRate(st, c, undefined, 'com') * 100).toFixed(2)}%` : ''}）</dd>
+    <dt>商業</dt><dd>月${fmt(castleCom(c))}貫（${Math.round(c.cdev * 100)}%${c.owner ? `　月+${(devRate(st, c, undefined, 'com') * 100).toFixed(2)}%` : ''}${c.rakuichi !== undefined ? `・上限${Math.round(comCap(c) * 100)}%` : ''}）</dd>
+    ${minesAt(c).length ? `<dt>鉱山</dt><dd>${minesAt(c).map(([, n, k, v]) => `${esc(n)}（${MINE_KIND_NAME[k]}・${fmt(v)}貫）`).join('・')}${c.owner ? `　今月 ${fmt(castleMine(st, c))}貫` : ''}<span class="hint" style="margin:0">　知行に関わらず当家に入る</span></dd>` : ''}
+    ${productsAt(c).length ? `<dt>特産</dt><dd>${productsAt(c).map(([, n, k, v]) => `${esc(n)}（${k === 'com' ? `商い+${v}貫` : esc(PRODUCT_KIND_NAME[k]) + (k === 'horse' ? '・突撃の損害減' : k === 'powder' ? '・鉄砲の維持費減' : '・鉄砲が安い')}）`).join('・')}</dd>` : ''}
+    ${c.owner === st.player ? (() => {
+      const b = (act: string, label: string, why: string | null) => `<button class="mini" data-act="${act}" data-id="${c.i}" ${why ? `disabled title="${esc(why)}"` : ''}>${label}</button>`;
+      const ib = (role: InvestRole) => b(role === 'agri' ? 'inv-agri' : 'inv-com', `${role === 'agri' ? '開発' : '商業'}+${R.INVEST_STEP * 100}%（${fmt(investCost(c, role))}貫）`, investBlock(st, st.player, c, role));
+      return `<dt>投資</dt><dd>${ib('agri')} ${ib('com')}</dd>
+        <dt>新田開発</dt><dd>${c.shinden ? `工事中（あと${c.shinden.until - st.turn}か月・成れば石高+${(c.baseKoku * R.SHINDEN_GAIN).toFixed(1)}万石）` : shindenDone(c) >= R.SHINDEN_MAX ? `${R.SHINDEN_MAX}度済み` : b('shinden', `始める（${fmt(shindenCost(c))}貫・${R.SHINDEN_MONTHS}か月・石高+${(c.baseKoku * R.SHINDEN_GAIN).toFixed(1)}万石）`, shindenBlock(st, st.player, c))}${shindenDone(c) && shindenDone(c) < R.SHINDEN_MAX ? `<span class="hint" style="margin:0">　${shindenDone(c)}度済み</span>` : ''}</dd>
+        <dt>普請</dt><dd>${esc(FORT_NAME[fortOf(c)])}${c.fortBuild ? `（${esc(FORT_NAME[fortOf(c) + 1])}を普請中・あと${c.fortBuild.until - st.turn}か月）` : fortOf(c) < FORT_NAME.length - 1 ? ` ${b('fort', `${FORT_NAME[fortOf(c) + 1]}を築く（${fmt(fortCost(c))}貫・${fortMonths(st, c)}か月）`, fortBlock(st, st.player, c))}` : ''}${fortOf(c) ? `<span class="hint" style="margin:0">　守り+${(fortOf(c) * R.FORT_DEF).toFixed(2)}・城兵+${Math.round(fortOf(c) * R.FORT_GARRISON * 100)}%・城門+${Math.round(fortOf(c) * R.FORT_GATE * 100)}%</span>` : ''}</dd>`;
+    })() : ''}
+    ${c.rakuichi !== undefined ? `<dt>楽市楽座</dt><dd>布いている${st.turn - c.rakuichi < R.RAKUICHI_MONTHS ? `（反発 あと${c.rakuichi + R.RAKUICHI_MONTHS - st.turn}か月）` : ''}</dd>` : c.owner === st.player ? `<dt>楽市楽座</dt><dd><button class="mini" data-act="rakuichi" data-id="${c.i}" title="商業の伸び×${R.RAKUICHI_GROW}・上限+${R.RAKUICHI_CAP * 100}%。${R.RAKUICHI_MONTHS}か月は治安${R.RAKUICHI_CHIAN}/月">楽市楽座を布く</button></dd>` : ''}
     <dt>治水</dt><dd>${Math.round(c.chisui)}（収穫×${R.harvestMult(c.chisui).toFixed(2)}）</dd>
     <dt>治安</dt><dd>${Math.round(c.chian)}（動員${Math.round(R.manpowerPer(c.chian))}人/万石・開発の上限${Math.round(R.devCap(c.chian) * 100)}%）${c.owner ? `<span class="hint" style="margin:0">　${(() => { const d = chianDelta(st, st.clans[c.owner!], c, besieged(st, c), st.clans[c.owner!].food <= 0); return `月${d.total >= 0 ? '+' : ''}${d.total.toFixed(1)}${d.parts.length ? `（${d.parts.map(([k, v]) => `${k}${v >= 0 ? '+' : ''}${v.toFixed(1)}`).join('・')}）` : ''}`; })()}</span>` : ''}</dd>
     <dt>守護</dt><dd>${(() => { const h = bk(st).shugo[provName(c.hex)]; return h ? `${esc(clanName(st, h))}家（${esc(provName(c.hex))}守護）` : '空き'; })()}</dd>
     ${c.ember && c.ember >= 1 ? `<dt>残り火</dt><dd>${Math.round(c.ember)}${c.oldOwner ? `（旧主 ${esc(clanName(st, c.oldOwner))}）` : ''}<span class="hint" style="margin:0">　治安${R.EMBER_FLARE_CHIAN}未満で燃え上がることがある</span></dd>` : ''}
-    ${c.owner === st.player && frontOfCastle(st, c) ? `<dt>方面</dt><dd>${esc(frontName(st, frontOfCastle(st, c)!))}（${R.FRONT_POLICY_NAME[frontOfCastle(st, c)!.policy]}）</dd>` : ''}
+    ${c.owner === st.player ? (() => {
+      const f = frontOfCastle(st, c);
+      const cands = leaderCands(st).filter((g) => !grantBlock(st, g, c));
+      const sel = cands.length && (!f || f.vacant) ? `<div style="margin-top:4px"><select data-fgrantc="${c.i}" aria-label="${esc(c.name)}を与える武将"><option value="">この城を与える…</option>${genOpts(cands, (g) => `<option value="${g.id}">${esc(g.name)}（未払い${dueOf(g)}・恩${Math.round(onOf(g))}${fiefOf(st, g) ? `・${fiefOf(st, g)!.castles.length}城` : ''}）</option>`)}</select></div>` : '';
+      return `<dt>知行</dt><dd>${f ? `${esc(frontName(st, f))}${f.vacant ? '（後継ぎ待ち）' : `（${R.FRONT_POLICY_NAME[policyOf(st, f).policy]}）`} <button class="mini" data-act="open-fiefs">知行を見る</button>` : '直轄（蔵入地）'}${sel}</dd>`;
+    })() : ''}
     ${isPort(st, c) ? `<dt>南蛮港</dt><dd>${esc(portName(c.id))}${(st.ships ?? []).some((x) => x.port === c.id) ? '　<b>南蛮船が来航中</b>' : ''}</dd>` : ''}
+    ${isKaraPort(c) ? `<dt>唐船</dt><dd>${esc(karaPortName(c.id))}（明の商人の船が来る港）${karasenAt(st, c.id) ? `　<b>唐船が来航中（月+${fmt(R.KARASEN_TRADE)}貫）</b>` : ''}</dd>` : ''}
     ${c.kiri && c.kiri >= 0.5 ? `<dt>信者</dt><dd>${Math.round(c.kiri)}%（商業+${Math.round(c.kiri * R.KIRI_COM * 100)}%）</dd>` : ''}
     <dt>城兵</dt><dd>${fmt(c.garrison)} / ${fmt(garrisonMax(c))}</dd>
     ${c.owner ? `<dt>城の蔵</dt><dd>${fmt(storeOf(c))}石（城兵の${c.garrison ? (storeOf(c) / Math.max(1, c.garrison * R.FOOD_PER_SOLDIER)).toFixed(1) : '—'}か月分・満${fmt(storeMax(c))}）${(() => { const k = castleSupply(st, c); return k === 'enclave' ? '<span class="pill warn" title="本国と陸でも海でもつながらない。家の蔵から兵糧が届かず、収穫はこの城の蔵に入る">飛び地</span>' : k === 'sea' ? '<span class="pill" title="本国と陸ではつながらないが、港どうしで兵糧を運べる（1割減る）">飛び地（海路）</span>' : ''; })()}${cutOff(st, c) ? '<span class="pill warn" title="敵に囲まれ、外から兵糧を入れられない。城兵が蔵を食べ、尽きると飢えて崩れる">兵糧攻め</span>' : ''}${st.sieges?.[c.i] ? `<span class="pill warn" title="城攻めが月をまたいで続いている。盤面（門の傷・部隊の位置）は翌月に持ち越す">${esc(clanName(st, st.sieges[c.i].clan))}家の包囲${st.sieges[c.i].months}か月</span>` : ''}${isCoast(c) ? '<span class="hint" style="margin:0">　港あり</span>' : ''}</dd>` : ''}
@@ -692,6 +729,20 @@ function onPanelClick(e: Event) {
     nextOrRefresh();
     return;
   }
+  if (act === 'inv-agri' || act === 'inv-com' || act === 'shinden' || act === 'fort') {
+    const c = st.castles[+(btn.dataset.id ?? -1)];
+    if (c) {
+      const why = act === 'shinden' ? shindenBlock(st, st.player, c) : act === 'fort' ? fortBlock(st, st.player, c) : investBlock(st, st.player, c, act === 'inv-agri' ? 'agri' : 'com');
+      if (why) toast(why);
+      else if (act === 'shinden') { startShinden(st, st.player, c); toast(`${c.name}で新田開発を始めた`); }
+      else if (act === 'fort') { const nm = FORT_NAME[fortOf(c) + 1]; startFort(st, st.player, c); toast(`${c.name}で${nm}の普請を始めた`); }
+      else { invest(st, st.player, c, act === 'inv-agri' ? 'agri' : 'com'); toast(`${c.name}の${act === 'inv-agri' ? '開発' : '商業'}に投じた`); }
+      refresh();
+    }
+    return;
+  }
+  if (act === 'open-fiefs') { openMenu('jinji', 'fronts'); return; }
+  if (act === 'rakuichi') { const c = st.castles[+(btn.dataset.id ?? -1)]; if (c) { const why = rakuichiBlock(st, c); if (why) toast(why); else { enactRakuichi(st, c); toast(`${c.name}に楽市楽座を布いた`); } refresh(); } return; }
   if (act === 'cancel-order' && mode.kind === 'army') { cancelOrder(st, mode.id); select({ kind: 'army', id: mode.id }); return; }
   if (mode.kind === 'army') {
     const a = st.armies[mode.id];
@@ -777,7 +828,7 @@ function doEndTurn() {
     if (st.over) { showGameOver(); return; }
     const reps = st.reports.slice();
     const news = st.log.filter((l) => l.turn === st.turn - 1 && l.mine && l.kind !== 'battle');
-    if (reps.length || news.length || st.offers?.length || st.missionVisit || shiokiPending(st).length || st.kanOffer || st.returnOffer || st.quarrel || st.willAsked === st.turn - 1 || rewardWaiting(st).some((g) => dueOf(g) >= R.ON_DUE_FREE && !delegateOf(st).staff) || (st.scenes?.length && cutinOn())) showReports(reps, `${dateLabel(st)}　諸国の動き`, news.map((l) => l.text));
+    if (reps.length || news.length || vacantFiefs(st).length || st.offers?.length || st.missionVisit || shiokiPending(st).length || st.kanOffer || st.returnOffer || st.quarrel || st.willAsked === st.turn - 1 || rewardWaiting(st).some((g) => dueOf(g) >= R.ON_DUE_FREE && !delegateOf(st).staff) || (st.scenes?.length && cutinOn())) showReports(reps, `${dateLabel(st)}　諸国の動き`, news.map((l) => l.text));
     else toast(`${dateLabel(st)}`);
   }, 30);
 }
@@ -825,12 +876,35 @@ function battleHtml(r: BattleReport) {
   </div>`;
 }
 
+// 与力を選ぶ一覧（寄親の札の中）: 他の城持ちをチェックで選ぶ。近い順。寄親に従う領は寄親になれない
+function yorikiList(st: GameState, f: Front) {
+  const seat = st.castles[f.seat ?? f.castles[0]];
+  const dist = (x: Front) => Math.min(...x.castles.map((i) => hexDist(st.castles[i].hex, seat.hex)));
+  const cands = frontsOf(st).filter((x) => !x.vacant && x.id !== f.id).sort((a, b) => dist(a) - dist(b));
+  if (!cands.length) return '<p class="hint">ほかに城持ちがいない。</p>';
+  return `<div class="yoriki-list">${cands.map((x) => { const g = st.generals[x.leader], other = x.boss !== undefined && x.boss !== f.id ? frontById(st, x.boss) : null, sub = frontsOf(st).filter((y) => y.boss === x.id).length;
+    return `<label class="il-opt il-radio"><input type="checkbox" name="yoriki" value="${x.id}" ${x.boss === f.id ? 'checked' : ''}><b>${esc(g.name)}（${esc(R.RANK_NAME[g.rank])}）</b><span>${x.castles.map((i) => esc(st.castles[i].name)).join('・')}　${fiefKoku(st, x).toFixed(1)}万石・${dist(x)}ヘックス${other ? `・<span class="warn">今は${esc(frontName(st, other))}の与力</span>` : ''}${sub ? `・与力${sub}（${esc(g.name)}ごとこちらへ移る）` : ''}</span></label>`; }).join('')}</div>
+    <div class="actions"><button class="act primary" data-act="yoriki-apply" data-id="${f.id}">決める</button><button class="act" data-act="yoriki-open" data-id="${f.id}">やめる</button></div>`;
+}
+
+// 領主のいなくなった領の後継ぎ
+function heirBlock(st: GameState) {
+  const vs = vacantFiefs(st);
+  if (!vs.length) return '';
+  return `<h3 class="sect-h">後継ぎを決める領</h3>${vs.map((f) => {
+    const cs = fiefHeirCands(st, f), old = st.generals[f.leader];
+    return `<div class="front-card"><p style="margin:0 0 6px">${esc(old?.name ?? '')}の領（${f.castles.map((i) => esc(st.castles[i].name)).join('・')}、${fiefKoku(st, f).toFixed(1)}万石）。陪臣${Object.values(st.generals).filter((g) => g.liege === f.leader && g.clan === st.player).length}人。</p>
+      <div class="actions" style="margin:0">${cs.length ? `<select id="sel-heir-${f.id}" aria-label="後継ぎ">${cs.map((g) => `<option value="${g.id}">${esc(g.name)}（${g.liege ? '陪臣・' : ''}${esc(R.RANK_NAME[g.rank])}・${fiefCap(g) === Infinity ? '城の上限なし' : `${fiefCap(g)}城まで`}）</option>`).join('')}</select><button class="act primary" data-act="fief-heir" data-id="${f.id}">継がせる</button>` : '<span class="hint" style="margin:0">継げる者がいない</span>'}<button class="act" data-act="front-off" data-id="${f.id}">召し上げて直轄に</button></div></div>`;
+  }).join('')}`;
+}
+
 // ───────── 月の報告と今月の要件 ─────────
 // 決めること（要件）と知らせ（諸国の動き）をタブで分ける。要件は閉じても右の画面と「要件」ボタンに残る
-const decisionsHtml = (st: GameState) => bushiBlock(st) + willBlock(st) + shiokiBlock(st) + rewardsBlock(st) + missionVisitBlock(st) + offersBlock(st);
+const decisionsHtml = (st: GameState) => heirBlock(st) + bushiBlock(st) + willBlock(st) + shiokiBlock(st) + rewardsBlock(st) + missionVisitBlock(st) + offersBlock(st);
 function todoItems(st: GameState): { label: string; n: number }[] {
   const out: { label: string; n: number }[] = [];
   const add = (label: string, n: number) => { if (n) out.push({ label, n }); };
+  add('後継ぎを決める領', vacantFiefs(st).length);
   add('恩賞を待つ者', delegateOf(st).staff ? 0 : rewardWaiting(st).filter((g) => dueOf(g) >= R.ON_DUE_FREE).length);
   add('仕置を決める城', shiokiPending(st).length);
   add('仕官の願い出', (st.offers ?? []).length);
@@ -888,8 +962,8 @@ type MenuKey = 'naisei' | 'gunji' | 'jinji' | 'gaiko' | 'akinai' | 'kiroku';
 // やりたいことでまとめたメニュー（いくつかのタブは旧タブを束ねたもの: COMPOSITE）
 const MENUS: { key: MenuKey; name: string; tabs: [string, string][] }[] = [
   { key: 'naisei', name: '内政', tabs: [['shiro', '城'], ['yosan', '予算と動員'], ['bugyo', '奉行'], ['deleg', '委任']] },
-  { key: 'gunji', name: '軍事', tabs: [['butai', '部隊'], ['corps', '軍団'], ['fronts', '方面軍団'], ['karairi', '唐入り']] },
-  { key: 'jinji', name: '人事', tabs: [['vassals', '家臣団'], ['rewards', '恩賞'], ['katoku', '家督'], ['tsukai', '使番'], ['gift', '下賜'], ['tokusei', '特性'], ['jinzai', '人材']] },
+  { key: 'gunji', name: '軍事', tabs: [['butai', '部隊'], ['corps', '軍団'], ['karairi', '唐入り']] },
+  { key: 'jinji', name: '人事', tabs: [['vassals', '家臣団'], ['rewards', '恩賞'], ['fronts', '知行'], ['katoku', '家督'], ['tsukai', '使番'], ['gift', '下賜'], ['tokusei', '特性'], ['jinzai', '人材']] },
   { key: 'gaiko', name: '外交', tabs: [['gaike', '諸大名'], ['bakufu', '幕府'], ['court', '朝廷'], ['mission', '布教']] },
   { key: 'akinai', name: '商い', tabs: [['rice', '兵糧'], ['gunbuy', '鉄砲'], ['item', '名物の市場'], ['nanban', '南蛮市']] },
   { key: 'kiroku', name: '記録', tabs: [['log', '全記録'], ['save', '保存と設定'], ['help', '遊び方']] },
@@ -910,6 +984,13 @@ const menuOfTab = (tab: string) => MENUS.find((m) => m.tabs.some(([k]) => k === 
 let curMenu: MenuKey = 'naisei';
 let menuShown = false;
 let vasSort: { key: string; dir: 1 | -1 } | null = null; // 家臣団の並べ替え
+let vasFilter: { role: string; q: string; rank: string; page: number } = { role: 'all', q: '', rank: '', page: 1 }; // 家臣団の絞り込み
+const VAS_PAGE = 60;
+let rwAll = false, rwPage = 1; // 恩賞: 全員を出すか（初めは報いるべき者だけ）・何ページまで出すか
+const RW_PAGE = 30;
+let corpsAll = false; const corpsOpen = new Set<number>();
+let yorikiFor: number | null = null; // 知行: 与力を選ぶ一覧を開いている寄親の領
+let castFilter = 'all', armyFilter = 'all'; const regOpen = new Map<string, boolean>(); // 城・部隊の一覧: 絞り込みと、地方ごとの開閉 // 軍団: 空きのない隊も出すか／開いている隊
 const lastTab = Object.fromEntries(MENUS.map((m) => [m.key, m.tabs[0][0]])) as Record<MenuKey, string>;
 
 function openMenu(m: MenuKey = curMenu, tab: string = lastTab[m]) {
@@ -930,7 +1011,7 @@ function openMenu(m: MenuKey = curMenu, tab: string = lastTab[m]) {
   const body = subs
     ? `<div class="subtabs" role="tablist" aria-label="小見出し">${subs.map(([h, k]) => `<button type="button" role="tab" data-act="sub" data-id="${k}" aria-selected="${k === sub}">${esc(h || SUB_NAME[k] || k)}</button>`).join('')}</div><section class="sect">${safeTab(sub!, st)}</section>`
     : safeTab(tab, st);
-  openModal(`<h2 id="modal-title">${def.name}</h2><p class="lede">${esc(dateLabel(st))}　金 ${fmt(me.gold)}貫（月+${fmt(clanIncome(st, st.player))}）・兵糧 ${fmt(me.food)}石・城${clanCastles(st, st.player).length}・兵${fmt(clanTroops(st, st.player))}</p>
+  openModal(`<h2 id="modal-title">${def.name}</h2><p class="lede">${esc(dateLabel(st))}　金 ${fmt(me.gold)}貫（月+${fmt(clanIncome(st, st.player))}${clanMine(st, st.player) ? `、うち鉱山${fmt(clanMine(st, st.player))}` : ''}）・兵糧 ${fmt(me.food)}石・城${clanCastles(st, st.player).length}・兵${fmt(clanTroops(st, st.player))}</p>
     <div class="tabs menu-tabs" role="tablist" aria-label="主メニュー">${MENUS.map((x, k) => `<button role="tab" data-act="mtab" data-id="${x.key}" aria-selected="${x.key === m}" title="${x.name} (${k + 1})">${x.name}</button>`).join('')}</div>
     <div class="tabs" role="tablist" aria-label="${def.name}">${def.tabs.filter(([k]) => k !== 'karairi' || karairiOn(st)).map(([k, l]) => `<button role="tab" data-act="stab" data-id="${k}" aria-selected="${k === tab}">${tabName(k, l)}</button>`).join('')}</div>${body}`);
   menuShown = true; genShown = null;
@@ -955,7 +1036,7 @@ const ROLE_NAME = { agri: '農政', com: '商業', hyoro: '兵站' } as const;
 // 兵站奉行の働き（奉行の画面）
 const hyoroLine = (st: GameState) => { const h = hyoroBugyo(st, st.player); return `兵站 ${h ? `${esc(h.name)}（知略${h.int}）` : 'なし'} → 補給の届く距離 ${supplyRange(st, st.player)}ヘックス・運送の減り×${h ? R.hyoroLoss(h.int).toFixed(2) : '1.00'}`; };
 const helpList = (items: string[]) => `<ul class="hint helplist" style="padding-left:1.2em">${items.map((x) => `<li>${x}</li>`).join('')}</ul>`;
-const KEYS_HTML = `<dl class="kv keys"><dt>1〜6</dt><dd>内政・軍事・人事・外交・商い・記録</dd><dt>T</dt><dd>今月の要件</dd><dt>M</dt><dd>地図の表示を切り替える（勢力・名分・治安・残り火・方面・守護）</dd><dt>N</dt><dd>次の未行動の部隊</dd><dt>E</dt><dd>評定終了（月を進める）</dd><dt>Esc</dt><dd>閉じる・選択を外す</dd></dl>`;
+const KEYS_HTML = `<dl class="kv keys"><dt>1〜6</dt><dd>内政・軍事・人事・外交・商い・記録</dd><dt>T</dt><dd>今月の要件</dd><dt>M</dt><dd>地図の表示を切り替える（勢力・名分・治安・残り火・知行・守護・補給）</dd><dt>N</dt><dd>次の未行動の部隊</dd><dt>E</dt><dd>評定終了（月を進める）</dd><dt>Esc</dt><dd>閉じる・選択を外す</dd></dl>`;
 // 用語集（遊び方）。[語, 読み, 説明]
 const GLOSSARY: [string, string, string][] = [
   ['石高', 'こくだか', '城の米の取れ高。動員できる兵の上限と収穫を決める。開発度で伸びる。'],
@@ -977,7 +1058,9 @@ const GLOSSARY: [string, string, string][] = [
   ['出仕', 'しゅっし', '職の持ち主に従うこと。同盟になり、その職の名分から外れる。'],
   ['残り火', 'のこりび', '落とした城に残る旧主の残党・門徒の火種。治安が低いと蜂起する。仕置で鎮める。'],
   ['仕置', 'しおき', '落とした城の扱い（撫育・見せしめ・焼き討ち）。治安・開発・残り火が変わる。'],
-  ['方面軍団', 'ほうめんぐんだん', '宿老・一門に城と部隊を預け、方針（攻略・防衛・軍備増強）だけ決めて任せる仕組み。'],
+  ['知行', 'ちぎょう', '家臣に与えた土地（城）。城持ちの家臣は自分の領の年貢で兵と陪臣を養い、方針（攻略・防衛・軍備増強）に従って動く。'],
+  ['陪臣', 'ばいしん', '家臣の家来。主（城持ち）から恩賞を受け、当家は直接は使えない。'],
+  ['蔵入地', 'くらいりち', '家臣に与えず、当主が直接治める城（直轄）。年貢・商いはすべて当家に入る。'],
   ['練度', 'れんど', '部隊の慣れ。足軽は100まで、農兵は60まで上がる。'],
   ['士気', 'しき', '戦う気力。壊乱閾値を下回ると潰走する。'],
   ['兵站', 'へいたん', '軍勢へ兵糧を届けること。自城から自領・同盟領をたどり、その外は3ヘックスほどまで届く（兵站奉行の知略で延びる）。遠いほど運ぶ兵糧が増え、敵の部隊に道を塞がれると切れる。'],
@@ -985,7 +1068,7 @@ const GLOSSARY: [string, string, string][] = [
   ['飛び地', 'とびち', '本国（当主の城のある領地のまとまり）と、敵の領地で隔てられた城。家の蔵から兵糧が届かず、収穫はその城の蔵に入る。本国と飛び地の両方に港があれば海路で運べる（1割減る）。'],
   ['城の蔵', 'しろのくら', '籠城の備え（城兵の6か月分）。ふだんは家の蔵から満たされ、囲まれると城兵が食べる。尽きると城兵が飢えて崩れる（兵糧攻め）。'],
   ['包囲', 'ほうい', '城攻めは一か月がかり（合戦画面の日数で30日）。月末までに決着しなければ、囲んだまま翌月へ続く。門の傷も部隊の位置もそのまま、翌月は続きから攻める。包囲のあいだ城は外から兵糧を入れられず、城の蔵を食べる。攻め手の出陣を取り消すか軍団が離れれば囲みは解ける。'],
-  ['一門・宿老', 'いちもん・しゅくろう', '当主の血縁と、家中の最上位の家臣。方面軍団の長や家督の候補になる。'],
+  ['一門・宿老', 'いちもん・しゅくろう', '当主の血縁と、家中の最上位の家臣。大きな領の主や家督の候補になる。'],
 ];
 const GLOSSARY_HTML = `<dl class="kv glossary">${GLOSSARY.map(([w, y, d]) => `<dt>${w}<small>${y}</small></dt><dd>${d}</dd>`).join('')}</dl>`;
 const dNote = (st: GameState, k: DelegateKey) => (delegateOf(st)[k] ? '<p class="hint warn" style="margin-top:0">委任中: 毎月の評定終了時にAIが決める（手で変えても翌月に上書きされる）。</p>' : '');
@@ -995,7 +1078,7 @@ const effOf = (it: Item) => { const b = R.itemBonus(it.kind, it.grade); return i
 const bugyoLine = (k: string, x: ReturnType<typeof bugyoCoef>) => `${k} 係数${x.coef.toFixed(2)}（自然増${R.DEV_NATURAL}＋奉行${x.base.toFixed(2)}${x.cover < 1 ? `×目の届く割合${Math.round(x.cover * 100)}%` : ''}）→ 城主のいる城は月+${(R.BUGYO_RATE * x.coef * 100).toFixed(2)}%`;
 const stats4 = (st: GameState, g: General) => { const b = bonusOf(st, g); const c = (v: number, x: number) => `<td class="n">${v}${x ? `<span class="hint" style="margin:0">(+${x})</span>` : ''}</td>`; return c(g.bra, b.bra) + c(g.int, b.int) + c(g.lea, b.lea) + c(g.cha, b.cha); };
 const ageCell = (st: GameState, g: General) => { const a = ageOf(st, g); return a === null || a < 0 ? '—' : `${a}`; };
-const isFree = (st: GameState, g: General) => g.clan === st.player && g.status === 'free' && st.clans[st.player].leader !== g.id;
+const isFree = (st: GameState, g: General) => g.clan === st.player && g.status === 'free' && st.clans[st.player].leader !== g.id && !g.liege;
 
 const onCell = (g: General) => { const v = Math.round(onOf(g)); return `<span class="${v < 30 ? 'bad-t' : v >= 75 ? 'good-t' : ''}" title="${onLabel(v)}">${v}</span>`; };
 // 仕置: 落とした城の治め方（月の報告と城の画面）
@@ -1006,7 +1089,7 @@ function shiokiButtons(st: GameState, c: Castle) {
 function shiokiBlock(st: GameState) {
   const ps = shiokiPending(st);
   if (!ps.length) return '';
-  return `<h3 style="margin-top:4px">仕置</h3><p class="hint" style="margin-top:0">落とした城の治め方を決める（次の評定終了まで。決めなければ撫育、方面の城は軍団長が決める）。撫育: そのまま。見せしめ: 治安+${R.MISESIME.chian}・開発×${R.MISESIME.dev}・残り火半分。焼き討ち: 治安${R.YAKIUCHI.chian}まで・開発×${R.YAKIUCHI.dev}・残り火を断つ・威信−${R.YAKIUCHI.prestige}。</p>
+  return `<h3 style="margin-top:4px">仕置</h3><p class="hint" style="margin-top:0">落とした城の治め方を決める（次の評定終了まで。決めなければ撫育、領の城は領主が決める）。撫育: そのまま。見せしめ: 治安+${R.MISESIME.chian}・開発×${R.MISESIME.dev}・残り火半分。焼き討ち: 治安${R.YAKIUCHI.chian}まで・開発×${R.YAKIUCHI.dev}・残り火を断つ・威信−${R.YAKIUCHI.prestige}。</p>
     <div class="tbl-wrap"><table><thead><tr><th>城</th><th>旧主</th><th class="n">残り火</th><th class="n">治安</th><th class="n">開発</th><th></th></tr></thead><tbody>
     ${ps.map((p) => { const c = st.castles[p.castle]; return `<tr><td>${esc(c.name)}</td><td>${esc(clanName(st, c.oldOwner ?? null))}${c.oldOwner && st.clans[c.oldOwner]?.alive ? '' : c.oldOwner ? '（滅亡）' : ''}</td><td class="n">${Math.round(c.ember ?? 0)}</td><td class="n">${Math.round(c.chian)}</td><td class="n">${Math.round(c.dev * 100)}%</td><td>${shiokiButtons(st, c)}</td></tr>`; }).join('')}
     </tbody></table></div>`;
@@ -1042,13 +1125,45 @@ function rewardRow(st: GameState, g: General, compact = false) {
   return `<tr><td class="gname">${face(g.id, 32, 'face face-sm')}${nameLink(g)}</td><td>${rankName(st, g)}</td><td class="n">${onCell(g)}<span class="hint" style="margin:0">（${onLabel(onOf(g))}）</span></td><td class="n">${due >= R.ON_DUE_FREE ? `<b>${due}</b>` : due}</td>${compact ? '' : `<td>${g.home !== undefined ? esc(st.castles[g.home].name) + (g.homeLost ? '<span class="pill bad">敵の手</span>' : '') : '—'}</td>`}<td>${btns}</td></tr>`;
 }
 const rewardHead = (compact = false) => `<thead><tr><th>武将</th><th>身分</th><th class="n">恩</th><th class="n">未払いの功</th>${compact ? '' : '<th>本領</th>'}<th></th></tr></thead>`;
-const rewardWaiting = (st: GameState) => vassalsOf(st, st.player).filter((g) => dueOf(g) >= R.ON_DUE_FREE || !promoteBlockOf(st, g)).sort((a, b) => dueOf(b) - dueOf(a));
+const rewardWaiting = (st: GameState) => vassalsOf(st, st.player).filter((g) => !g.liege && (dueOf(g) >= R.ON_DUE_FREE || !promoteBlockOf(st, g))).sort((a, b) => dueOf(b) - dueOf(a));
+// 恩賞のまとめ操作の札（対象の人数と、加増の予算）
+function rewardBulk(st: GameState, list: General[]) {
+  const gold = st.clans[st.player].gold;
+  const kan = list.filter((g) => dueOf(g) > 0 && !kanjoBlock(st, g)).length;
+  const pro = list.filter((g) => !promoteBlockOf(st, g)).length;
+  const kz = list.filter((g) => dueOf(g) > 0);
+  const need = kz.reduce((t, g) => t + kazoCost(g), 0);
+  return `<div class="actions" style="flex-wrap:wrap;gap:6px;margin:6px 0"><button class="act" data-act="rw-bulk-kanjo" ${kan ? '' : 'disabled'}>感状をまとめて（${kan}人・金はかからない）</button>
+    <select id="rw-budget" aria-label="加増の予算">${[0.1, 0.3, 0.5, 1].map((r) => `<option value="${r}" ${r === 0.3 ? 'selected' : ''}>金の${r === 1 ? '全額' : `${r * 10}割`}まで（${fmt(Math.floor(gold * r))}貫）</option>`).join('')}</select><button class="act" data-act="rw-bulk-kazo" ${kz.length ? '' : 'disabled'}>未払いの多い順に加増（${kz.length}人・全員で${fmt(need)}貫）</button>
+    <button class="act" data-act="rw-bulk-promote" ${pro ? '' : 'disabled'}>取り立てをまとめて（${pro}人）</button></div>`;
+}
 function rewardsBlock(st: GameState) {
   if (delegateOf(st).staff) return '';
   const w = rewardWaiting(st);
   if (!w.length) return '';
   return `<h3 style="margin-top:4px">恩賞の沙汰</h3><p class="hint" style="margin-top:0">功を立てた者が恩賞を待っている（未払いの功が${R.ON_DUE_FREE}を超えると毎月恩が下がる）。家の御恩の評判 ${Math.round(goodwill(st, st.player))}。全員は「人事」の恩賞で。</p>
-    <div class="tbl-wrap"><table>${rewardHead(true)}<tbody>${w.slice(0, 6).map((g) => rewardRow(st, g, true)).join('')}</tbody></table></div>`;
+    ${rewardBulk(st, w)}<div class="tbl-wrap"><table>${rewardHead(true)}<tbody>${w.slice(0, 6).map((g) => rewardRow(st, g, true)).join('')}</tbody></table></div>${w.length > 6 ? `<p class="hint">ほか${w.length - 6}人（まとめて報いるか、「人事」の恩賞で一人ずつ）。</p>` : ''}`;
+}
+// 選択欄: 城は地方ごと、武将は身分ごとに見出しを付けてまとめる
+const castleRegion = (c: Castle) => regionOf(provName(c.hex));
+function castleOpts(cs: Castle[], opt: (c: Castle) => string): string {
+  const by = new Map<string, Castle[]>();
+  for (const c of cs) { const r = castleRegion(c); if (!by.has(r)) by.set(r, []); by.get(r)!.push(c); }
+  if (by.size <= 1 || cs.length <= 8) return cs.map(opt).join('');
+  return REGION_ORDER.filter((r) => by.has(r)).map((r) => `<optgroup label="${r}（${by.get(r)!.length}城）">${by.get(r)!.map(opt).join('')}</optgroup>`).join('');
+}
+function genOpts(gs: General[], opt: (g: General) => string): string {
+  if (gs.length <= 8) return gs.map(opt).join('');
+  const by = new Map<number, General[]>();
+  for (const g of gs) { if (!by.has(g.rank)) by.set(g.rank, []); by.get(g.rank)!.push(g); }
+  return [...by.keys()].sort((a, b) => a - b).map((k) => `<optgroup label="${R.RANK_NAME[k] ?? '—'}（${by.get(k)!.length}人）">${by.get(k)!.map(opt).join('')}</optgroup>`).join('');
+}
+// 地方ごとにたたむ一覧。key は開閉を覚える名前（城・部隊で別）。少なければたたまない
+function regionGroups<T>(key: string, items: T[], regionOfItem: (x: T) => string, head: (r: string, xs: T[]) => string, table: (xs: T[]) => string): string {
+  const by = new Map<string, T[]>();
+  for (const x of items) { const r = regionOfItem(x); if (!by.has(r)) by.set(r, []); by.get(r)!.push(x); }
+  if (items.length <= 15 || by.size <= 1) return table(items);
+  return REGION_ORDER.filter((r) => by.has(r)).map((r) => { const k = `${key}:${r}`, open = regOpen.get(k) ?? false; return `<details class="reg"${open ? ' open' : ''}><summary data-act="reg-toggle" data-id="${esc(k)}">${head(r, by.get(r)!)}</summary>${table(by.get(r)!)}</details>`; }).join('');
 }
 const nameLink = (g: General) => `<button type="button" class="glink" data-act="gen" data-id="${g.id}">${esc(g.name)}</button>`;
 // 能力が見えるか: 自家・在野・自家の捕虜・交戦した武将
@@ -1071,20 +1186,45 @@ function genActions(st: GameState, g: General) {
   const C = st.clans[st.player];
   const due = dueOf(g), kb = kanjoBlock(st, g), pb = promoteBlockOf(st, g), cost = kazoCost(g);
   const rows: string[] = [];
+  if (g.liege) {
+    const lord = st.generals[g.liege];
+    rows.push(`<dt>主</dt><dd>${lord ? nameLink(lord) : '？'}の陪臣（恩賞と役目は主が決める）</dd>`);
+    rows.push(`<dt>知行</dt><dd><button class="mini" data-act="fief-direct" data-id="${g.id}">直参に引き上げる</button> <span class="hint" style="margin:0">主の恩が${Math.round((R.FIEF_PULL_ON[g.rank] ?? 3) * (st.generals[g.liege]?.tozama ? R.TOZAMA_PULL : 1))}下がる</span></dd>`);
+    rows.push(`<dt>その他</dt><dd><button class="mini" data-act="exile" data-id="${g.id}">追放する</button></dd>`);
+    return `<h3 style="margin-top:12px">命令</h3><dl class="kv">${rows.join('')}</dl>`;
+  }
+  const myFief = fiefOf(st, g);
   rows.push(`<dt>恩賞</dt><dd><button class="mini" data-act="rw-kanjo" data-id="${g.id}" ${kb ? `disabled title="${esc(kb)}"` : ''}>感状</button> <button class="mini" data-act="rw-kazo" data-id="${g.id}" ${due <= 0 || C.gold < cost ? 'disabled' : ''}>加増（${fmt(cost)}貫）</button> <button class="mini" data-act="rw-promote" data-id="${g.id}" ${pb ? `disabled title="${esc(pb)}"` : ''}>${pb ? '取り立て' : `${R.RANK_NAME[g.rank - 1]}に取り立て`}</button></dd>`);
   const role: string[] = [];
   if (g.status === 'free') {
     const why = canBugyo(st, g), whyT = canTsukai(st, g);
     role.push(`<button class="mini" data-act="bugyo-on" data-id="${g.id}" ${why ? `disabled title="${esc(why)}"` : ''}>奉行に</button>`);
     if (g.rank >= R.TSUKAI_MAX_RANK) role.push(`<button class="mini" data-act="tsukai-on" data-id="${g.id}" ${whyT ? `disabled title="${esc(whyT)}"` : ''}>${tsukaiLabel(st.player)}に</button>`);
-    role.push(`<select data-govg="${g.id}" aria-label="城主に任じる城"><option value="">城主に任じる…</option>${clanCastles(st, st.player).map((c) => `<option value="${c.i}">${esc(c.name)}${c.governor ? `（今は${esc(st.generals[c.governor].name)}）` : ''}</option>`).join('')}</select>`);
-    role.push(`<select data-move="${g.id}" aria-label="移動先">${clanCastles(st, st.player).map((c) => `<option value="${c.i}" ${c.i === g.loc ? 'selected' : ''}>${esc(c.name)}へ移す</option>`).join('')}</select>`);
+    role.push(`<select data-govg="${g.id}" aria-label="城主に任じる城"><option value="">城主に任じる…</option>${castleOpts(clanCastles(st, st.player).filter((c) => !frontOfCastle(st, c) || frontOfCastle(st, c)!.vacant), (c) => `<option value="${c.i}">${esc(c.name)}${c.governor ? `（今は${esc(st.generals[c.governor].name)}）` : ''}</option>`)}</select>`);
+    role.push(`<select data-move="${g.id}" aria-label="移動先">${castleOpts(clanCastles(st, st.player), (c) => `<option value="${c.i}" ${c.i === g.loc ? 'selected' : ''}>${esc(c.name)}へ移す</option>`)}</select>`);
   }
   if (g.status === 'bugyo') role.push(`<button class="mini" data-act="bugyo-off" data-id="${g.id}">奉行を解く</button>`);
   if (g.status === 'tsukai') role.push(`<button class="mini" data-act="tsukai-off" data-id="${g.id}">${tsukaiLabel(st.player)}を解く</button>`);
-  if (g.status === 'governor') { const c = st.castles.find((x) => x.governor === g.id); if (c) role.push(`<button class="mini" data-act="gov-out" data-id="${c.i}">城主を解く</button>`); }
+  if (g.status === 'governor' && !myFief) { const c = st.castles.find((x) => x.governor === g.id); if (c && !frontOfCastle(st, c)) role.push(`<button class="mini" data-act="gov-out" data-id="${c.i}">城主を解く</button>`); }
   if (g.status === 'army' || g.status === 'free') role.push(`<button class="mini" data-act="open-corps-m">軍団の編成へ</button>`);
   if (role.length) rows.push(`<dt>役目</dt><dd class="actions" style="margin:0">${role.join(' ')}</dd>`);
+  // 知行: 城を与える（身分の枠まで）・陪臣に付ける
+  if (myFief) rows.push(`<dt>知行</dt><dd>${esc(frontName(st, myFief))} ${myFief.castles.length}城・${fiefKoku(st, myFief).toFixed(1)}万石（${fiefCap(g) === Infinity ? '城の数に上限なし' : `${fiefCap(g)}城まで`}） <button class="mini" data-act="open-fiefs">知行を見る</button></dd>`);
+  if (g.clan === st.player && st.clans[st.player].leader !== g.id && !['young', 'captive', 'dead', 'ronin'].includes(g.status)) {
+    const room = fiefCap(g) - (myFief?.castles.length ?? 0);
+    const cs = room > 0 ? clanCastles(st, st.player).filter((c) => !grantBlock(st, g, c)) : [];
+    if (cs.length) rows.push(`<dt>${myFief ? '加増' : '城を与える'}</dt><dd><select data-fgrant="${g.id}" aria-label="与える城"><option value="">城を与える…</option>${castleOpts(cs, (c) => { const o = frontOfCastle(st, c); return `<option value="${c.i}">${esc(c.name)}（${castleKoku(c).toFixed(1)}万石${o ? `・今は${esc(frontName(st, o))}` : ''}）</option>`; })}</select></dd>`);
+    else if (fiefCap(g) <= 0 && !myFief) rows.push(`<dt>知行</dt><dd class="hint" style="margin:0">${R.RANK_NAME[g.rank]}は城を持てない（足軽大将に取り立てると1城）</dd>`);
+    const fs = myFief ? [] : frontsOf(st).filter((f) => !f.vacant && !baishinBlock(st, g, f));
+    if (fs.length) rows.push(`<dt>陪臣に</dt><dd><select data-fbai-g="${g.id}" aria-label="仕える城持ち"><option value="">城持ちの陪臣に付ける…</option>${fs.map((f) => `<option value="${f.id}">${esc(st.generals[f.leader].name)}（${esc(frontName(st, f))}）</option>`).join('')}</select></dd>`);
+  }
+  if (g.clan === st.player && st.clans[st.player].leader !== g.id && !['young', 'captive', 'dead', 'ronin'].includes(g.status)) {
+    const kb2 = kanBlock(st, g), next = Math.min(R.KAN_VASSAL_MAX, kanOf(g) + 1);
+    rows.push(`<dt>官位</dt><dd>${kanOf(g) ? esc(kanName(g)) : '無位'}${kanOf(g) < R.KAN_VASSAL_MAX ? ` <button class="mini" data-act="kan-up" data-id="${g.id}" ${kb2 ? `disabled title="${esc(kb2)}"` : ''}>${esc(R.COURT[next].name)}に推挙（${fmt(kanCost(g))}貫）</button>` : ''}</dd>`);
+    const provs = shugoProvs(st);
+    if (g.shugodai) rows.push(`<dt>守護代</dt><dd>${esc(g.shugodai)}守護代 <button class="mini" data-act="sgd-off" data-id="${g.id}">解く</button></dd>`);
+    else if (provs.length) rows.push(`<dt>守護代</dt><dd><select data-sgd="${g.id}" aria-label="守護代に任じる国"><option value="">守護代に任じる…</option>${provs.map((pv) => { const h = shugodaiOf(st, pv); return `<option value="${esc(pv)}">${esc(pv)}${h ? `（今は${esc(h.name)}）` : ''}</option>`; }).join('')}</select></dd>`);
+  }
   const items = clanItems(st, st.player).filter((it) => it.holder !== g.id);
   if (items.length) rows.push(`<dt>下賜</dt><dd><select data-equipg="${g.id}" aria-label="下賜する名物"><option value="">名物を下賜する…</option>${items.map((it) => `<option value="${it.id}">${esc(itemLabel(it))}${it.holder ? `（${esc(st.generals[it.holder].name)}から）` : ''}</option>`).join('')}</select></dd>`);
   rows.push(`<dt>その他</dt><dd><button class="mini" data-act="exile" data-id="${g.id}">追放する</button></dd>`);
@@ -1130,6 +1270,18 @@ const TABS: Record<string, (st: GameState) => string> = {
       <dt>治水</dt><dd>${selPct('chisui', me.budget.chisui, R.BUDGET_STEPS)}　月およそ${fmt((inc * me.budget.chisui) / 100)}貫${lb ? `（先月${fmt(lb.chisui)}貫）` : ''}</dd>
       <dt>施し</dt><dd>${selPct('hodo', me.budget.hodo, R.BUDGET_STEPS)}　月およそ${fmt((inc * me.budget.hodo) / 100)}貫${lb ? `（先月${fmt(lb.hodo)}貫）` : ''}</dd>
       <dt>重点の城</dt><dd>${me.focus !== null && me.focus !== undefined ? esc(st.castles[me.focus].name) : 'なし（城の画面で指定）'}</dd></dl>
+      <h3 style="margin-top:12px">年貢の率</h3>
+      <div class="subtabs">${(['low', 'mid', 'high'] as Tax[]).map((t) => `<button aria-selected="${taxOf(st, st.player) === t}" data-act="tax" data-id="${t}">${TAX[t].name}</button>`).join('')}</div>
+      <p class="hint" style="margin-top:0">${(['low', 'mid', 'high'] as Tax[]).map((t) => `<b>${TAX[t].name}</b>（${TAX[t].note}）: 年貢・商いの収入×${TAX[t].income}${TAX[t].chian ? `・治安 毎月${TAX[t].chian > 0 ? '+' : ''}${TAX[t].chian}` : ''}${TAX[t].grow !== 1 ? `・開発の伸び×${TAX[t].grow}` : ''}${TAX[t].cap !== 1 ? `・動員上限×${TAX[t].cap}` : ''}${TAX[t].ember !== 1 ? `・残り火の鎮まり×${TAX[t].ember}` : ''}`).join('<br>')}<br>鉱山と貿易の稼ぎは年貢の率に関わらない。</p>
+      ${(() => {
+        const cs = clanCastles(st, st.player);
+        const need = (role: InvestRole) => cs.filter((c) => !investBlock(st, st.player, c, role) || (investBlock(st, st.player, c, role) ?? '').startsWith('金'));
+        const works = cs.filter((c) => c.shinden || c.fortBuild);
+        return `<h3 style="margin-top:12px">城への投資をまとめて</h3>
+        <div class="actions" style="flex-wrap:wrap;gap:6px"><select id="inv-budget" aria-label="投資の予算">${[0.1, 0.3, 0.5, 1].map((r) => `<option value="${r}" ${r === 0.3 ? 'selected' : ''}>金の${r === 1 ? '全額' : `${r * 10}割`}まで（${fmt(Math.floor(me.gold * r))}貫）</option>`).join('')}</select>
+        <button class="act" data-act="inv-bulk" data-id="agri" ${need('agri').length ? '' : 'disabled'}>開発の低い城から（${need('agri').length}城）</button><button class="act" data-act="inv-bulk" data-id="com" ${need('com').length ? '' : 'disabled'}>商業の低い城から（${need('com').length}城）</button></div>
+        <p class="hint">一度に開発（または商業）+${R.INVEST_STEP * 100}%ずつ、上限（治安で決まる）まで。新田開発と普請は城の画面で。${works.length ? `工事中: ${works.map((c) => `${esc(c.name)}（${c.shinden ? '新田' : ''}${c.shinden && c.fortBuild ? '・' : ''}${c.fortBuild ? FORT_NAME[fortOf(c) + 1] : ''}）`).join('、')}` : ''}</p>`;
+      })()}
       ${hints([
         `毎月の収入のうち、決めた割合を治水と施しに回す。重点の城に半分を先に回し、残りは低い城から自動で配る。治水1＝基本石高×${R.CHISUI_COST}貫、治安1（施し）＝基本石高×${R.HODO_COST}貫。城ごとの値は「城の一覧」で見られる。`,
         '治水: 収穫＝石高×（0.7＋治水×0.006）。0で70%、50で100%、100で130%。',
@@ -1139,18 +1291,24 @@ const TABS: Record<string, (st: GameState) => string> = {
   },
   castles: (st) => {
     const me = st.clans[st.player];
-    const cs = clanCastles(st, st.player).sort((a, b) => castleKoku(b) - castleKoku(a));
-    return `<div class="tbl-wrap"><table><thead><tr><th>城</th><th>縄張り</th><th>城主</th><th class="n">石高</th><th class="n">城兵</th><th class="n">治安</th><th class="n">治水</th><th class="n">開発</th><th class="n">上限</th><th class="n">商業</th></tr></thead><tbody>
-      ${cs.map((c) => `<tr><td><button class="mini" data-act="goto-castle" data-id="${c.i}">${esc(c.name)}</button>${me.focus === c.i ? ' <span class="pill warn">重点</span>' : ''}${besieged(st, c) ? ' <span class="pill bad">包囲</span>' : ''}</td>
+    const all = clanCastles(st, st.player).sort((a, b) => castleKoku(b) - castleKoku(a));
+    const FIL: [string, string, (c: Castle) => boolean][] = [['all', 'すべて', () => true], ['nogov', '城主不在', (c) => !c.governor], ['low', '治安40未満', (c) => c.chian < 40], ['siege', '包囲中', (c) => besieged(st, c)], ['direct', '直轄', (c) => { const f = frontOfCastle(st, c); return !f || !!f.vacant; }], ['fief', '領', (c) => { const f = frontOfCastle(st, c); return !!f && !f.vacant; }]];
+    const fl = FIL.find(([k]) => k === castFilter) ?? FIL[0];
+    const cs = all.filter(fl[2]);
+    const chips = all.length > 8 ? `<div class="subtabs">${FIL.map(([k, l, f]) => { const n = all.filter(f).length; return n || k === 'all' ? `<button aria-selected="${castFilter === k}" data-act="cast-filter" data-id="${k}">${l} ${n}</button>` : ''; }).join('')}</div>` : '';
+    const table = (xs: Castle[]) => `<div class="tbl-wrap"><table><thead><tr><th>城</th><th>縄張り</th><th>城主</th><th class="n">石高</th><th class="n">城兵</th><th class="n">治安</th><th class="n">治水</th><th class="n">開発</th><th class="n">上限</th><th class="n">商業</th></tr></thead><tbody>
+      ${xs.map((c) => `<tr><td><button class="mini" data-act="goto-castle" data-id="${c.i}">${esc(c.name)}</button>${me.focus === c.i ? ' <span class="pill warn">重点</span>' : ''}${besieged(st, c) ? ' <span class="pill bad">包囲</span>' : ''}${fortOf(c) ? ` <span class="pill">${FORT_NAME[fortOf(c)]}</span>` : ''}${c.shinden ? ' <span class="pill good">新田</span>' : ''}${c.fortBuild ? ' <span class="pill good">普請</span>' : ''}</td>
         <td>${R.CASTLE_KIND[c.kind ?? 'hira'].name}</td><td>${c.governor ? esc(st.generals[c.governor].name) : '<span class="hint" style="margin:0">不在</span>'}</td><td class="n">${man(castleKoku(c))}</td><td class="n">${fmt(c.garrison)}</td>
         <td class="n">${Math.round(c.chian)}</td><td class="n">${Math.round(c.chisui)}</td><td class="n">${Math.round(c.dev * 100)}%</td><td class="n">${Math.round(R.devCap(c.chian) * 100)}%</td><td class="n">${fmt(Math.round(castleCom(c)))}</td></tr>`).join('')}
-      </tbody></table></div><p class="hint">城の名を押すとその城へ移る（城主の任命・重点の指定・登用は城の画面で）。商業は毎月の金の収入。</p>`;
+      </tbody></table></div>`;
+    const head = (r: string, xs: Castle[]) => `${r}　${xs.length}城・${xs.reduce((t, c) => t + castleKoku(c), 0).toFixed(0)}万石${xs.some((c) => !c.governor) ? `・<span class="warn">城主不在${xs.filter((c) => !c.governor).length}</span>` : ''}${xs.some((c) => c.chian < 40) ? `・<span class="warn">治安の低い城${xs.filter((c) => c.chian < 40).length}</span>` : ''}`;
+    return `${chips}${cs.length ? regionGroups('cast', cs, castleRegion, head, table) : '<p class="hint">当てはまる城はない。</p>'}<p class="hint">城の名を押すとその城へ移る（城主の任命・重点の指定・登用は城の画面で）。商業は毎月の金の収入。城が多いときは地方ごとにたたむ（見出しを押すと開く）。</p>`;
   },
   bugyo: (st) => {
     const bs = bugyoOf(st, st.player);
     const cands = Object.values(st.generals).filter((g) => isFree(st, g)).sort((a, b) => b.int - a.int);
     const full = bs.length >= bugyoSlots(st, st.player);
-    const row = (g: General, act: string) => `<tr><td class="gname">${face(g.id, 32, 'face face-sm')}${nameLink(g)}${g.sick ? ' <span class="pill bad">病</span>' : ''}</td><td>${rankName(st, g)}</td>${stats4(st, g)}<td>${act}</td></tr>`;
+    const row = (g: General, act: string) => `<tr><td class="gname">${face(g.id, 32, 'face face-sm')}${nameLink(g)}${g.sick ? ' <span class="pill bad">病</span>' : ''}${g.liege ? ` <span class="pill" title="${esc(st.generals[g.liege]?.name ?? '')}の陪臣">陪臣</span>` : ''}</td><td>${rankName(st, g)}</td>${stats4(st, g)}<td>${act}</td></tr>`;
     return `${dNote(st, 'staff')}<p class="hint" style="margin-top:0">奉行 ${bs.length} / ${bugyoSlots(st, st.player)}人。${bugyoLine('農政（石高）', bugyoCoef(st, st.player))}。${bugyoLine('商業', bugyoCoef(st, st.player, 'com'))}。${hyoroLine(st)}。奉行1人で${R.BUGYO_CASTLES}城まで目が届く（今${clanCastles(st, st.player).length}城）。</p>
       <div class="tbl-wrap"><table><thead><tr><th>奉行</th><th>身分</th><th class="n">武勇</th><th class="n">知略</th><th class="n">統率</th><th class="n">魅力</th><th>担当</th></tr></thead><tbody>
       ${bs.length ? bs.map((g) => row(g, `${ROLE_NAME[roleOf(g)]} <button class="mini" data-act="bugyo-role" data-id="${g.id}">${ROLE_NAME[roleOf(g) === 'agri' ? 'com' : roleOf(g) === 'com' ? 'hyoro' : 'agri']}へ</button> <button class="mini" data-act="bugyo-off" data-id="${g.id}">奉行を解く</button>`)).join('') : '<tr><td colspan="7" class="hint">奉行はいない。</td></tr>'}
@@ -1169,23 +1327,29 @@ const TABS: Record<string, (st: GameState) => string> = {
         '商い: 兵糧が3か月分を切れば買い、余れば高い時期に売る。鉄砲は兵の20%まで買い、自城の近くの部隊に持たせる。金に余裕があれば半年に一度、名物を買う。',
         '人事: 武将に余裕があれば奉行（知略の高い順、農政と商業を交互に）と使番（武勇の高い順）を埋め、蔵の名物を部隊長に下賜する。恩賞（未払いの多い者に加増か感状）と、功績の満ちた者の取り立ても行う。',
         '官位: 金が次の献金の2倍あれば官位を上げる。',
-        '軍事: 方面軍団に入れていない直轄の部隊と城を、AIの諸大名と同じ判断（攻勢・均衡・守勢）で動かす。部隊の出陣・移動・新しい部隊の編成・軍団の傘下・城主・鉄砲と大筒の配備・足軽の雇い入れまで。方面軍団は「人事」の方面軍団で別に任せられる。',
+        '軍事: 領に入れていない直轄の部隊と城を、AIの諸大名と同じ判断（攻勢・均衡・守勢）で動かす。部隊の出陣・移動・新しい部隊の編成・軍団の傘下・城主・鉄砲と大筒の配備・足軽の雇い入れまで。家臣に城を与えて任せるのは「人事」の知行で。',
       ])}`;
   },
   // ── 軍事 ──
   armies: (st) => {
-    const as = clanArmies(st, st.player).filter((a) => !a.ikki).sort((a, b) => b.troops - a.troops);
-    return as.length ? `<div class="tbl-wrap"><table><thead><tr><th>部隊</th><th>傘下</th><th>所在</th><th class="n">兵</th><th class="n">足軽</th><th class="n">練度</th><th class="n">士気</th><th class="n">鉄砲</th><th>状態</th></tr></thead><tbody>
-      ${as.map((a) => {
+    const all = clanArmies(st, st.player).filter((a) => !a.ikki).sort((a, b) => b.troops - a.troops);
+    const FIL: [string, string, (a: Army) => boolean][] = [['all', 'すべて', () => true], ['idle', '未行動', (a) => !a.acted && !orderFor(st, a.id) && !delegatedArmy(st, a)], ['order', '出陣命令', (a) => !!orderFor(st, a.id)], ['direct', '直轄', (a) => !delegatedArmy(st, a)], ['deleg', '領・委任', (a) => delegatedArmy(st, a)]];
+    const fl = FIL.find(([k]) => k === armyFilter) ?? FIL[0];
+    const as = all.filter(fl[2]);
+    const chips = all.length > 8 ? `<div class="subtabs">${FIL.map(([k, l, f]) => { const n = all.filter(f).length; return n || k === 'all' ? `<button aria-selected="${armyFilter === k}" data-act="army-filter" data-id="${k}">${l} ${n}</button>` : ''; }).join('')}</div>` : '';
+    const head = (r: string, xs: Army[]) => `${r}　${xs.length}隊・兵${fmt(xs.reduce((t, a) => t + a.troops, 0))}${xs.some((a) => !a.acted && !orderFor(st, a.id) && !delegatedArmy(st, a)) ? `・<span class="good">未行動${xs.filter((a) => !a.acted && !orderFor(st, a.id) && !delegatedArmy(st, a)).length}</span>` : ''}`;
+    const table = (xs: Army[]) => `<div class="tbl-wrap"><table><thead><tr><th>部隊</th><th>傘下</th><th>所在</th><th class="n">兵</th><th class="n">足軽</th><th class="n">練度</th><th class="n">士気</th><th class="n">鉄砲</th><th>状態</th></tr></thead><tbody>
+      ${xs.map((a) => {
         const ord = orderFor(st, a.id);
         const occ = ord ? occupancy(st).get(ord.hex) : null;
         const tn = ord ? (occ ? `${st.generals[occ.main].name}隊` : castleAt(st, ord.hex)?.name ?? '敵陣') : '';
         const here = castleAt(st, a.hex);
         return `<tr><td class="gname">${face(a.main, 32, 'face face-sm')}<button class="mini" data-act="goto-army" data-id="${a.id}">${esc(st.generals[a.main].name)}隊</button></td><td>${staffOf(a).length ? `${staffOf(a).length}人` : '—'}</td>
         <td>${esc(here ? here.name : PROVINCES[HEXES[a.hex].p].name)}</td><td class="n">${fmt(a.troops)}</td><td class="n">${fmt(ashiOf(a))}</td><td class="n">${Math.round(drillOf(a))}</td><td class="n">${a.morale.toFixed(2)}</td><td class="n">${fmt(a.guns ?? 0)}</td>
-        <td>${ord ? `<span class="pill warn">出陣: ${esc(tn)}</span>` : a.routed ? '<span class="pill bad">潰走</span>' : a.acted ? '行動済み' : '<span class="pill good">未行動</span>'}</td></tr>`;
+        <td>${ord ? `<span class="pill warn">出陣: ${esc(tn)}</span>` : a.routed ? '<span class="pill bad">潰走</span>' : delegatedArmy(st, a) ? '領・委任' : a.acted ? '行動済み' : '<span class="pill good">未行動</span>'}</td></tr>`;
       }).join('')}
-      </tbody></table></div><p class="hint">部隊の名を押すと地図でその部隊を選ぶ。移動・攻撃・補佐の付け替えは部隊の画面で。</p>` : '<p class="lede">部隊はない。城の画面で編成する。</p>';
+      </tbody></table></div>`;
+    return all.length ? `${chips}${as.length ? regionGroups('army', as, (a) => regionOf(provName(a.hex)), head, table) : '<p class="hint">当てはまる部隊はない。</p>'}<p class="hint">部隊の名を押すと地図でその部隊を選ぶ。移動・攻撃・補佐の付け替えは部隊の画面で。部隊が多いときは地方ごとにたたむ（見出しを押すと開く）。</p>` : '<p class="lede">部隊はない。城の画面で編成する。</p>';
   },
   ashi: (st) => {
     const me = st.clans[st.player];
@@ -1286,6 +1450,15 @@ const TABS: Record<string, (st: GameState) => string> = {
       ${myProvs.map((prov) => postRow({ kind: 'shugo', prov }, '当家の城のある国')).join('')}
       </tbody></table></div>
       ${OFFICES.some((o) => B.offices[o.id] === st.player) ? `<h3 style="margin-top:12px">出仕を求める（管内の家）</h3><div class="actions" style="flex-wrap:wrap">${inJurisdiction(st, st.player).filter((C) => !B.shussi[C.id]).map((C) => `<button class="mini" data-act="bk-demand" data-id="${C.id}">${esc(C.name)}家</button>`).join('') || '<span class="hint" style="margin:0">管内に従っていない家はない</span>'}</div>` : ''}
+      ${(() => {
+        const provs = shugoProvs(st);
+        if (!provs.length) return '';
+        const vs = Object.values(st.generals).filter((g) => g.clan === st.player && !g.liege && g.id !== st.clans[st.player].leader && ['free', 'army', 'governor', 'bugyo', 'tsukai'].includes(g.status)).sort((a, b) => a.rank - b.rank || b.cha - a.cha);
+        return `<h3 style="margin-top:12px">守護代（当家が守護の国）</h3><p class="hint" style="margin-top:0">家臣を守護代に任じると恩+${R.SHUGODAI_ON}、その国の当家の城の治安が毎月+${R.SHUGODAI_CHIAN}。解く・代えると恩−${R.SHUGODAI_OFF}。守護でなくなれば外れる。</p>
+        <div class="tbl-wrap"><table><thead><tr><th>国</th><th>守護代</th><th>任じる</th></tr></thead><tbody>
+        ${provs.map((pv) => { const h = shugodaiOf(st, pv); return `<tr><td>${esc(pv)}</td><td>${h ? `${nameLink(h)} <button class="mini" data-act="sgd-off" data-id="${h.id}">解く</button>` : '<span class="hint" style="margin:0">不在</span>'}</td><td><select data-sgdp="${esc(pv)}" aria-label="${esc(pv)}の守護代"><option value="">${h ? '代える武将を選ぶ…' : '任じる武将を選ぶ…'}</option>${vs.filter((g) => g !== h).map((g) => `<option value="${g.id}">${esc(g.name)}（${esc(R.RANK_NAME[g.rank])}・魅${g.cha}${g.shugodai ? `・今は${esc(g.shugodai)}守護代` : ''}）</option>`).join('')}</select></td></tr>`; }).join('')}
+        </tbody></table></div>`;
+      })()}
       ${holders.length ? `<h3 style="margin-top:12px">出仕する（職の持ち主に従う）</h3><div class="actions" style="flex-wrap:wrap">${holders.map((h) => `<button class="mini" data-act="bk-shussi" data-id="${h}" ${shussiBlock(st, st.player, h) ? 'disabled' : ''}>${esc(clanName(st, h))}家（${esc(OFFICES.filter((o) => B.offices[o.id] === h).map((o) => o.name).join('・'))}）</button>`).join('')}</div>` : ''}
       ${hints([
         '大義名分: 攻める相手ごとに名分を問う。名分があるのは、将軍家の討伐、将軍の御内書、僭称の家、将軍に弓を引いた家、職の管内で従わない家、守護職の国、旧領の回復（5年以内に失った城）、仇討ち（一門・宿老を討った家、10年）、反撃（半年以内に攻めてきた家）、同盟相手の救援、謀反・お家騒動で割れた家。国人衆の城は問わない。',
@@ -1305,6 +1478,14 @@ const TABS: Record<string, (st: GameState) => string> = {
       <div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th>官位</th><th class="n">献金</th><th class="n">威信</th><th class="n">攻められにくさ</th></tr></thead><tbody>
       ${R.COURT.slice(1).map((c, k) => `<tr${k + 1 === cur ? ' class="me"' : ''}><td>${esc(c.name)}</td><td class="n">${fmt(c.cost)}貫</td><td class="n">+${c.pres}</td><td class="n">${Math.round(c.deter * 100)}%</td></tr>`).join('')}
       </tbody></table></div>
+      ${(() => {
+        const vs = Object.values(st.generals).filter((g) => g.clan === st.player && !g.liege && g.id !== st.clans[st.player].leader && ['free', 'army', 'governor', 'bugyo', 'tsukai'].includes(g.status))
+          .sort((a, b) => kanOf(b) - kanOf(a) || (b.fame ?? 0) - (a.fame ?? 0) || a.rank - b.rank).slice(0, 40);
+        return `<h3 style="margin-top:12px">家臣の推挙</h3><p class="hint" style="margin-top:0">家臣のために朝廷へ官位を願う（当家の官位より下、大納言まで。献金はその官位の${Math.round(R.KAN_RATE * 100)}%）。恩と名声が上がり、外から官の誘いが来なくなる。外から官を受けていた者は、その縁が切れる。陪臣の官位は主が決める。</p>
+        <div class="tbl-wrap"><table><thead><tr><th>武将</th><th>身分</th><th class="n">名声</th><th class="n">恩</th><th>官位</th><th></th></tr></thead><tbody>
+        ${vs.map((g) => { const why = kanBlock(st, g), next = Math.min(R.KAN_VASSAL_MAX, kanOf(g) + 1); return `<tr><td>${nameLink(g)}${g.outer ? ' <span class="pill bad">外の官</span>' : ''}</td><td>${esc(R.RANK_NAME[g.rank])}</td><td class="n">${Math.round(g.fame ?? 0)}</td><td class="n">${Math.round(onOf(g))}</td><td>${kanOf(g) ? esc(kanName(g)) : '無位'}</td><td>${kanOf(g) < R.KAN_VASSAL_MAX ? `<button class="mini" data-act="kan-up" data-id="${g.id}" ${why ? `disabled title="${esc(why)}"` : ''}>${esc(R.COURT[next].name)}に（${fmt(kanCost(g))}貫）</button>` : ''}</td></tr>`; }).join('')}
+        </tbody></table></div>`;
+      })()}
       ${hints([
         '朝廷への献金で、1つ下から順に官位が上がる。威信の上乗せは外交・調略・登用の計算に効く（威信の上限100を超えて効く）。',
         '攻められにくさ: AIがこの家を攻める相手に選びにくくなり、攻めかかる判断も慎重になる。',
@@ -1385,7 +1566,15 @@ const TABS: Record<string, (st: GameState) => string> = {
     const statusName = (g: General) => g.status === 'army' ? (g.army && st.armies[g.army]?.main === g.id ? '部隊長' : '補佐') : g.status === 'governor' ? '城主' : g.status === 'free' ? '待機'
       : g.status === 'bugyo' ? `奉行（${roleOf(g) === 'com' ? '商業' : '農政'}）` : g.status === 'tsukai' ? (ts[0]?.id === g.id ? `${label}筆頭` : label) : g.status === 'young' ? ((g.born ?? 0) > st.year ? `誕生前（${g.born}年生）` : `元服前（${g.genpuku}年）`) : g.status;
     const nextAt = (g: General) => g.rank > 0 ? R.MERIT_AT[g.rank - 1] : null;
-    const own = Object.values(st.generals).filter((g) => g.clan === st.player && !g.ikki && g.status !== 'dead' && g.status !== 'captive');
+    const all = Object.values(st.generals).filter((g) => g.clan === st.player && !g.ikki && g.status !== 'dead' && g.status !== 'captive');
+    const isFiefLord = (g: General) => (st.fronts ?? []).some((f) => f.leader === g.id && !f.vacant);
+    const ROLES: [string, string, (g: General) => boolean][] = [
+      ['all', '全員', () => true], ['free', '待機', (g) => g.status === 'free' && !g.liege], ['governor', '城主', (g) => g.status === 'governor' && !g.liege], ['army', '部隊', (g) => g.status === 'army' && !g.liege],
+      ['yaku', '奉行・' + label, (g) => g.status === 'bugyo' || g.status === 'tsukai'], ['fief', '城持ち', isFiefLord], ['baishin', '陪臣', (g) => !!g.liege], ['young', '元服前', (g) => g.status === 'young'],
+    ];
+    const vf = vasFilter;
+    const roleF = ROLES.find(([k]) => k === vf.role) ?? ROLES[0];
+    const own = all.filter((g) => roleF[2](g) && (vf.rank === '' || String(g.rank) === vf.rank) && (!vf.q || g.name.includes(vf.q)));
     const order = (g: General) => (g.id === leaderId ? -1 : g.status === 'young' ? 9 : g.rank);
     const locName = (g: General) => g.status === 'army' && g.army && st.armies[g.army] ? PROVINCES[HEXES[st.armies[g.army].hex].p].name : st.castles[g.loc]?.name ?? '—';
     // 見出しを押すと並べ替え（数値は高い順から。もう一度押すと逆順）。所在は城の順（部隊は後ろに部隊ごと）、役職は同じ役職がまとまる
@@ -1404,15 +1593,19 @@ const TABS: Record<string, (st: GameState) => string> = {
       const on = vs?.key === key;
       return `<th${num ? ' class="n"' : ''} aria-sort="${on ? (vs!.dir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" class="th-sort${on ? ' on' : ''}" data-act="vsort" data-id="${key}" data-num="${num ? 1 : 0}">${label}${on ? (vs!.dir > 0 ? '▲' : '▼') : ''}</button></th>`;
     };
-    return `<p class="lede">${own.length}名。名前を押すと、その武将への命令（恩賞・奉行・${label}・城主・移動・下賜・追放）が出る。見出しを押すと並べ替え${vs ? '（<button type="button" class="glink" data-act="vsort" data-id="">身分順に戻す</button>）' : ''}。</p>
+    const shown = vf.page * VAS_PAGE;
+    return `<p class="lede">${all.length}名${own.length !== all.length ? `（絞り込み ${own.length}名）` : ''}。名前を押すと、その武将への命令が出る。見出しを押すと並べ替え${vs ? '（<button type="button" class="glink" data-act="vsort" data-id="">身分順に戻す</button>）' : ''}。</p>
+    <div class="subtabs">${ROLES.map(([k, l, f]) => { const n = all.filter(f).length; return n || k === 'all' ? `<button aria-selected="${vf.role === k}" data-act="vfilter" data-id="${k}">${esc(l)} ${n}</button>` : ''; }).join('')}</div>
+    <div class="actions" style="margin:6px 0;gap:6px"><input type="search" data-vq value="${esc(vf.q)}" placeholder="名前で探す" aria-label="名前で探す" style="max-width:12em"><select data-vrank aria-label="身分"><option value="">身分すべて</option>${R.RANK_NAME.map((n, k) => `<option value="${k}" ${vf.rank === String(k) ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>${vf.q || vf.rank || vf.role !== 'all' ? '<button class="mini" data-act="vfilter" data-id="reset">絞り込みを解く</button>' : ''}</div>
     <div class="tbl-wrap"><table><thead><tr>${th('name', '武将')}${th('rank', '身分')}${th('age', '年齢', true)}${th('merit', '功績', true)}${th('bra', '武勇', true)}${th('int', '知略', true)}${th('lea', '統率', true)}${th('cha', '魅力', true)}${th('on', '恩', true)}${th('role', '役職')}${th('loc', '所在')}</tr></thead><tbody>
-    ${own.sort(cmp).map((g) => {
+    ${own.sort(cmp).slice(0, shown).map((g) => {
       return `<tr${leaderId === g.id ? ' class="me"' : ''}><td class="gname">${face(g.id, 32, 'face face-sm')}${nameLink(g)}${g.kin ? ' <span class="pill">一門</span>' : ''}${[g.tea, g.sword, g.nanban].filter((x) => x && st.items[x]).map((x) => ` <span class="pill good" title="${esc(itemLabel(st.items[x!]))}">${({ tea: '茶', sword: '刀', nanban: '南' } as const)[st.items[x!].kind]}</span>`).join('')}${g.kiri ? ' <span class="pill" title="洗礼を受けた">洗礼</span>' : ''}${g.sick ? ' <span class="pill bad">病</span>' : ''}</td><td>${rankName(st, g)}</td>
       <td class="n">${ageCell(st, g)}</td><td class="n">${g.status === 'young' || g.id === leaderId ? '—' : `${Math.floor(g.merit)}${nextAt(g) !== null ? `<span class="hint" style="margin:0">/${nextAt(g)}</span>` : ''}`}</td>
       ${stats4(st, g)}<td class="n">${g.id === leaderId || g.status === 'young' ? '—' : onCell(g)}</td><td>${statusName(g)}</td>
       <td>${esc(locName(g))}</td></tr>`;
     }).join('')}
     </tbody></table></div>
+    ${own.length > shown ? `<div class="actions"><button class="act" data-act="vmore">さらに${Math.min(VAS_PAGE, own.length - shown)}人を見る（残り${own.length - shown}人）</button></div>` : ''}
     ${hints([
       `身分で率いられる兵の上限が変わる: 当主×${R.LEADER_TROOP}、宿老×${R.RANK_TROOP[0]}、侍大将×${R.RANK_TROOP[1]}、足軽大将×${R.RANK_TROOP[2]}、足軽組頭×${R.RANK_TROOP[3]}。一門は侍大将以上として扱う。`,
       `功績: 合戦の勝ち+${R.MERIT.WIN}（城を落とせばさらに+${R.MERIT.CASTLE}）、負け+${R.MERIT.LOSE}、引き分け+${R.MERIT.DRAW}、調略の成功+${R.MERIT.PLOT}、城主は毎月+${R.MERIT.GOV}、奉行は毎月+${R.BUGYO_MERIT}。${label}は家が戦った月に部隊長の${R.TSUKAI_MULT}倍の功績を得る。`,
@@ -1460,7 +1653,7 @@ const TABS: Record<string, (st: GameState) => string> = {
   },
   gunbuy: (st) => {
     const me = st.clans[st.player], gp = gunPrice(st, st.player), total = clanGuns(st, st.player);
-    return `${dNote(st, 'trade')}<dl class="kv"><dt>鉄砲</dt><dd>蔵 ${fmt(me.guns)}丁・全体 ${fmt(total)}丁</dd><dt>値段</dt><dd>1丁 ${gp}貫${hasGunSource(st, st.player) ? '（産地を持つ）' : `（産地を持てば${R.GUN_PRICE_SOURCE}貫）`}</dd><dt>維持費</dt><dd>月 ${fmt(Math.round(total * R.GUN_UPKEEP))}貫（1丁${R.GUN_UPKEEP}貫）</dd><dt>金</dt><dd>${fmt(me.gold)}貫</dd></dl>
+    return `${dNote(st, 'trade')}<dl class="kv"><dt>鉄砲</dt><dd>蔵 ${fmt(me.guns)}丁・全体 ${fmt(total)}丁</dd><dt>値段</dt><dd>1丁 ${gp}貫${hasGunSource(st, st.player) ? '（産地を持つ）' : `（産地を持てば${R.GUN_PRICE_SOURCE}貫）`}${hasProduct(st, st.player, 'iron') ? `・鉄の産地で${Math.round(R.IRON_GUN * 100)}%` : ''}</dd><dt>維持費</dt><dd>月 ${fmt(Math.round(total * R.GUN_UPKEEP * (hasProduct(st, st.player, 'powder') ? R.POWDER_UPKEEP : 1)))}貫（1丁${R.GUN_UPKEEP}貫${hasProduct(st, st.player, 'powder') ? `・硫黄・煙硝の産地で${Math.round(R.POWDER_UPKEEP * 100)}%` : ''}）</dd><dt>金</dt><dd>${fmt(me.gold)}貫</dd></dl>
       <h3 style="margin-top:10px">買う</h3><div class="actions">${[100, 300, 500, 1000].map((n) => `<button class="mini" data-act="gun-buy" data-id="${n}" ${me.gold >= n * gp ? '' : 'disabled'}>${fmt(n)}丁（${fmt(n * gp)}貫）</button>`).join('')}</div>
       ${hints([
         '産地: 堺（岸和田城）・国友（小谷城）・根来寺・雑賀城。',
@@ -1473,7 +1666,7 @@ const TABS: Record<string, (st: GameState) => string> = {
     const mineI = clanItems(st, st.player).sort((a, b) => b.grade - a.grade);
     const gens = Object.values(st.generals).filter((g) => g.clan === st.player && ['free', 'army', 'governor', 'tsukai', 'bugyo'].includes(g.status));
     return `${dNote(st, 'staff')}${mineI.length ? `<div class="tbl-wrap"><table><thead><tr><th>名物</th><th>効果</th><th>所持</th></tr></thead><tbody>
-      ${mineI.map((it) => `<tr><td>${esc(itemLabel(it))}</td><td>${effOf(it)}</td><td><select data-equip="${it.id}" aria-label="${esc(it.name)}を持たせる武将"><option value="">蔵に置く</option>${gens.map((g) => `<option value="${g.id}" ${it.holder === g.id ? 'selected' : ''}>${esc(g.name)}${g[it.kind] && g[it.kind] !== it.id ? `（${esc(st.items[g[it.kind]!].name)}と替える）` : ''}</option>`).join('')}</select></td></tr>`).join('')}
+      ${mineI.map((it) => `<tr><td>${esc(itemLabel(it))}</td><td>${effOf(it)}</td><td><select data-equip="${it.id}" aria-label="${esc(it.name)}を持たせる武将"><option value="">蔵に置く</option>${genOpts(gens, (g) => `<option value="${g.id}" ${it.holder === g.id ? 'selected' : ''}>${esc(g.name)}${g[it.kind] && g[it.kind] !== it.id ? `（${esc(st.items[g[it.kind]!].name)}と替える）` : ''}</option>`)}</select></td></tr>`).join('')}
       </tbody></table></div>` : '<p class="lede">蔵に名物はない（「商い」の名物の市場で買える）。</p>'}
       ${hints([
         `武将1人に茶器・刀剣・南蛮の品を1点ずつ持たせられる（下賜）。茶器は魅力+格×2・知略+格、刀剣は武勇+格×2・統率+格、南蛮の品は全能力+格。初めて下賜した名物は恩+格×${R.ON_ITEM}（未払いの功を格×${R.ON_ITEM_PAY}まで報いる）。`,
@@ -1503,11 +1696,11 @@ const TABS: Record<string, (st: GameState) => string> = {
       </tbody></table></div>` : '<p class="hint">積荷の品は売り切れた。</p>'}`
       : `<p class="lede">${clanPorts(st, st.player).length ? `当家の港（${clanPorts(st, st.player).map(([id]) => esc(portName(id))).join('・')}）に南蛮船は来ていない。` : '当家は南蛮港を持っていない。'}南蛮市は、南蛮船が当家の港に来ている間だけ開く。</p>`;
     return `${dNote(st, 'trade')}${market}
-      <dl class="kv" style="margin-top:10px"><dt>来航中</dt><dd>${all.length ? all.join('、') : 'なし'}</dd><dt>来航の見込み</dt><dd>${odds}</dd></dl>
+      <dl class="kv" style="margin-top:10px"><dt>来航中</dt><dd>${all.length ? all.join('、') : 'なし'}</dd><dt>来航の見込み</dt><dd>${odds}</dd><dt>唐船</dt><dd>${(st.karasen ?? []).length ? (st.karasen ?? []).map((x) => `${esc(karaPortName(x.port))}（${portOwner(st, x.port) ? esc(clanName(st, portOwner(st, x.port))) + '家' : '国人'}・あと${Math.max(1, x.until - st.turn + 1)}か月）`).join('、') : '来ていない（平戸・坊津・博多に、ときどき来る）'}</dd>${silverTrade(st, st.player) ? `<dt>銀の上乗せ</dt><dd>船が来ている月は+${fmt(silverTrade(st, st.player))}貫</dd>` : ''}</dl>
       ${hints([
         `南蛮船は毎年${R.SHIP_MONTH}月に1〜2隻が来て、${R.SHIP_STAY}か月とどまる。港: 平戸・府内・坊津（内城）・堺（岸和田城）、${'1570'}年から長崎（三城）。`,
         `布教を許した家の港には${R.SHIP_W_ALLOW}倍来やすく、禁教の家の港にはほとんど来ない（「外交」の布教）。`,
-        `来航中は港の持ち主に貿易の利が月${fmt(R.SHIP_TRADE)}貫入る。1隻が鉄砲${R.SHIP_GUNS}丁・大筒${R.SHIP_CANNON}門・南蛮の品を積んでくる。`,
+        `来航中は港の持ち主に貿易の利が月${fmt(R.SHIP_TRADE)}貫入る（銀山を持てば、その産出の${R.SILVER_TRADE * 100}%を上乗せ）。唐船（明の商人の密貿易の船）も平戸・坊津・博多にときどき来て、${R.KARASEN_STAY}か月のあいだ月${fmt(R.KARASEN_TRADE)}貫が入る（唐入りのあいだは来ない）。貿易の利は港を家臣に与えても当家に入る。1隻が鉄砲${R.SHIP_GUNS}丁・大筒${R.SHIP_CANNON}門・南蛮の品を積んでくる。`,
         `大筒（維持費 月${R.CANNON_UPKEEP}貫/門）は部隊に${R.CANNON_MAX}門まで持たせる。攻城の初めに城門を1門ごとに${R.CANNON_GATE * 100}%削り、城兵を怯ませ、その後も攻め手の手番ごとに城門を撃つ。自動の決着では城の守りを弱める。部隊が壊滅すると失う。`,
       ])}`;
   },
@@ -1546,15 +1739,19 @@ const TABS: Record<string, (st: GameState) => string> = {
       ])}`;
   },
   rewards: (st) => {
-    const vs = vassalsOf(st, st.player).sort((a, b) => dueOf(b) - dueOf(a) || onOf(a) - onOf(b));
+    const allv = vassalsOf(st, st.player).filter((g) => !g.liege).sort((a, b) => dueOf(b) - dueOf(a) || onOf(a) - onOf(b));
+    const waiting = allv.filter((g) => dueOf(g) >= R.ON_DUE_FREE || !promoteBlockOf(st, g) || onOf(g) < 30);
+    const vs = rwAll ? allv : waiting;
     const gw = goodwill(st, st.player);
-    return `${dNote(st, 'staff')}<dl class="kv"><dt>御恩の評判</dt><dd>${Math.round(gw)}（家臣の恩の平均。仕官の願い出・捕虜の登用に効く）</dd><dt>金</dt><dd>${fmt(st.clans[st.player].gold)}貫</dd><dt>不満の者</dt><dd>${vs.filter((g) => onOf(g) < 30).length}人</dd></dl>
-      <div class="tbl-wrap" style="margin-top:8px"><table>${rewardHead()}<tbody>${vs.map((g) => rewardRow(st, g)).join('')}</tbody></table></div>
+    return `${dNote(st, 'staff')}<dl class="kv"><dt>御恩の評判</dt><dd>${Math.round(gw)}（家臣の恩の平均。仕官の願い出・捕虜の登用に効く）</dd><dt>金</dt><dd>${fmt(st.clans[st.player].gold)}貫</dd><dt>不満の者</dt><dd>${allv.filter((g) => onOf(g) < 30).length}人</dd></dl>
+      <div class="subtabs" style="margin-top:8px"><button aria-selected="${!rwAll}" data-act="rw-all" data-id="0">報いるべき者（${waiting.length}人）</button><button aria-selected="${rwAll}" data-act="rw-all" data-id="1">直参の全員（${allv.length}人）</button></div>
+      ${rewardBulk(st, waiting)}
+      ${vs.length ? `<div class="tbl-wrap" style="margin-top:8px"><table>${rewardHead()}<tbody>${vs.slice(0, rwPage * RW_PAGE).map((g) => rewardRow(st, g)).join('')}</tbody></table></div>${vs.length > rwPage * RW_PAGE ? `<div class="actions"><button class="act" data-act="rw-more">さらに${Math.min(RW_PAGE, vs.length - rwPage * RW_PAGE)}人を見る（残り${vs.length - rwPage * RW_PAGE}人）</button></div>` : ''}` : '<p class="hint">いま報いるべき者はいない（未払いの功が溜まった者・取り立てられる者・恩の低い者を出す）。</p>'}
       ${hints([
-        `恩（0〜100）: 合戦・調略・方面の働きで功績が増えると「未払いの功」になる。${R.ON_DUE_FREE}を超えたまま報いずにいると、毎月恩が下がる（多いほど速い）。報われていれば少しずつ${R.ON_TARGET}（一門は+10）へ戻る。城主は知行の手応えで毎月少し上がる。城主・奉行の日々の務めは未払いにならない。`,
-        `報い方: 感状（金はかからず未払い${R.ON_KANJO_PAY}まで・恩+${R.ON_KANJO}、${R.ON_KANJO_MONTHS}か月に一度）、加増（未払い1につき${R.ON_GOLD}貫・未払いをすべて消して恩+2〜12）、取り立て（功績が満ちた者・恩+${R.ON_PROMOTE}、未払い${R.ON_PROMOTE_PAY}まで）、下賜（初めての名物・恩+格×${R.ON_ITEM}）。`,
+        `恩（0〜100）: 合戦・調略・方面の働きで功績が増えると「未払いの功」になる（陪臣の恩賞は主が払う）。${R.ON_DUE_FREE}を超えたまま報いずにいると、毎月恩が下がる（多いほど速い）。報われていれば少しずつ${R.ON_TARGET}（一門は+10）へ戻る。城主は知行の手応えで毎月少し上がる。城主・奉行の日々の務めは未払いにならない。`,
+        `報い方: 城を与える（「知行」で。いちばん重い恩賞）、感状（金はかからず未払い${R.ON_KANJO_PAY}まで・恩+${R.ON_KANJO}、${R.ON_KANJO_MONTHS}か月に一度）、加増（未払い1につき${R.ON_GOLD}貫・未払いをすべて消して恩+2〜12）、取り立て（功績が満ちた者・恩+${R.ON_PROMOTE}、未払い${R.ON_PROMOTE_PAY}まで）、下賜（初めての名物・恩+格×${R.ON_ITEM}）。`,
         `本領: 武将の縁のある城。敵に取られている間は毎月恩−${R.ON_HOME_LOST}、取り戻せば+${R.ON_HOME_BACK}。`,
-        `恩が低いと: ${R.ON_LEAVE}未満で出奔することがある。${R.ON_BETRAY}未満の城主は、近くに敵の城があれば城ごと寝返ることがある。${R.ON_REBEL}未満の方面軍団の軍団長は、担当の城と部隊を率いて謀反を起こすことがある。他家の調略にも乗りやすい（城主の恩0で+20%）。高いと部隊の初めの士気が上がる。`,
+        `恩が低いと: ${R.ON_LEAVE}未満で出奔することがある。${R.ON_BETRAY}未満の城主は、近くに敵の城があれば城ごと寝返ることがある。${R.ON_REBEL}未満の城持ちは、領の城と部隊と陪臣を率いて謀反を起こすことがある。他家の調略にも乗りやすい（城主の恩0で+20%）。高いと部隊の初めの士気が上がる。`,
         '新参（登用・仕官・降った家の者）は恩45から始まる。「内政」の委任で人事を任せると、恩賞と取り立ても自動で行う。',
       ])}`;
   },
@@ -1563,7 +1760,7 @@ const TABS: Record<string, (st: GameState) => string> = {
     const me = st.clans[st.player];
     const own = Object.values(st.generals).filter((g) => g.clan === st.player && traitOf(g) && g.status !== 'dead' && g.status !== 'captive');
     const head = ninjaHead(st, st.player);
-    const ninjas = own.filter((g) => traitOf(g) === 'ninja' && g.status === 'free');
+    const ninjas = own.filter((g) => traitOf(g) === 'ninja' && g.status === 'free' && !g.liege);
     const tg = ninjaTargetOf(st);
     const why = ninjaBlock(st, st.player, ninjaSel.act, tg);
     const reach = ninjaReach(st, st.player);
@@ -1605,7 +1802,7 @@ const TABS: Record<string, (st: GameState) => string> = {
     const tsu = st.castles.find((c) => c.id === 'kaneishi'), bus = st.castles.find((c) => c.id === 'busan');
     const abroad = Object.values(st.armies).filter((a) => a.clan === st.player && isForeignHex(a.hex));
     const atTsu = Object.values(st.armies).filter((a) => a.clan === st.player && crossingEnds().includes(a.hex) && !isForeignHex(a.hex));
-    const cands = Object.values(st.generals).filter((g) => g.clan === st.player && g.status === 'free' && g.id !== st.clans[st.player].leader).sort((a, b) => Number(ADMIRALS.has(b.id)) - Number(ADMIRALS.has(a.id)) || (b.lea + b.int) - (a.lea + a.int));
+    const cands = Object.values(st.generals).filter((g) => g.clan === st.player && g.status === 'free' && g.id !== st.clans[st.player].leader && !g.liege).sort((a, b) => Number(ADMIRALS.has(b.id)) - Number(ADMIRALS.has(a.id)) || (b.lea + b.int) - (a.lea + a.int));
     const sel = (n: number) => { const cur = k.escort[n] ?? ''; return `<select data-escort="${n}" aria-label="水軍の将${n + 1}"><option value="">（なし）</option>${cands.map((g) => `<option value="${g.id}" ${g.id === cur ? 'selected' : ''}>${esc(g.name)}${ADMIRALS.has(g.id) ? '（水軍）' : ''}　統${g.lea}・知${g.int}</option>`).join('')}</select>`; };
     const yi = k.yi >= 0.8 ? '盛ん' : k.yi >= 0.5 ? 'やや衰え' : '衰えている';
     return `<dl class="kv">
@@ -1642,44 +1839,68 @@ const TABS: Record<string, (st: GameState) => string> = {
     ])}`;
   },
   fronts: (st) => {
-    const fs = frontsOf(st), max = frontMax(st), cands = leaderCands(st);
+    const fs = frontsOf(st).filter((f) => !f.vacant);
     const castles = clanCastles(st, st.player);
-    const as = clanArmies(st, st.player).filter((a) => !a.ikki).sort((a, b) => b.troops - a.troops);
-    const fopt = (cur: number | undefined) => `<option value="">直轄</option>${fs.map((f) => `<option value="${f.id}" ${cur === f.id ? 'selected' : ''}>${esc(frontName(st, f))}</option>`).join('')}`;
+    const direct = castles.filter((c) => { const f = frontOfCastle(st, c); return !f || f.vacant; });
+    const kokuAll = castles.reduce((t, c) => t + castleKoku(c), 0), kokuDirect = direct.reduce((t, c) => t + castleKoku(c), 0);
+    const cands = leaderCands(st);
     const card = (f: (typeof fs)[number]) => {
       const g = st.generals[f.leader];
+      const pf = policyOf(st, f), boss = frontById(st, f.boss);
       const tc = targetCands(st, f);
-      const tsel = f.policy === 'attack' ? `<select data-ftgt="${f.id}" aria-label="攻略目標"><option value="">目標は軍団長に任せる</option>
+      const tsel = !boss && f.policy === 'attack' ? `<select data-ftgt="${f.id}" aria-label="攻略目標"><option value="">目標は領主に任せる</option>
         ${tc.clans.map((id) => `<option value="clan:${id}" ${f.target === `clan:${id}` ? 'selected' : ''}>${esc(clanName(st, id))}家</option>`).join('')}
         ${tc.castles.map((c) => `<option value="castle:${c.i}" ${f.target === `castle:${c.i}` ? 'selected' : ''}>${esc(c.name)}（${esc(clanName(st, c.owner))}${c.owner ? '家' : ''}）</option>`).join('')}
         ${f.target && !tc.clans.some((id) => f.target === `clan:${id}`) && !tc.castles.some((c) => f.target === `castle:${c.i}`) ? `<option value="${f.target}" selected>${esc(targetLabel(st, f))}</option>` : ''}</select>` : '';
-      const fa = as.filter((a) => a.front === f.id), fc = castles.filter((c) => f.castles.includes(c.i));
-      return `<div class="front-card"><div class="ph">${face(g.id, 48, 'face')}<div><h3 style="margin:0">${esc(frontName(st, f))}</h3><div class="sub">軍団長 ${nameLink(g)}　${rankName(st, g)}　統率${g.lea}・魅力${g.cha}・知略${g.int}</div></div></div>
-        <div class="actions" style="margin:6px 0"><select data-fpol="${f.id}" aria-label="方針">${(['attack', 'defend', 'build'] as const).map((p) => `<option value="${p}" ${f.policy === p ? 'selected' : ''}>${R.FRONT_POLICY_NAME[p]}</option>`).join('')}</select>${tsel}<button class="mini" data-act="front-off" data-id="${f.id}">方面を解く</button></div>
-        <dl class="kv"><dt>担当の城</dt><dd>${fc.length ? fc.map((c) => esc(c.name)).join('・') : '<span class="hint" style="margin:0">なし（下で割り当てる）</span>'}</dd>
+      const bsel = boss ? `<span class="hint" style="margin:0">${esc(frontName(st, boss))}の与力</span> <button class="mini" data-act="yoriki-off" data-id="${f.id}">与力を外す</button>` : '';
+      const fa = frontArmies(st, f), fc = f.castles.map((i) => st.castles[i]);
+      const bs = baishinOf(st, f);
+      const addable = Object.values(st.generals).filter((x) => isFree(st, x) && !baishinBlock(st, x, f) && !fiefOf(st, x)).sort((x, y) => x.rank - y.rank || y.lea - x.lea);
+      const room = fiefCap(g) - f.castles.length;
+      const more = room > 0 ? castles.filter((c) => !grantBlock(st, g, c)) : [];
+      const yoriko = fs.filter((x) => x.boss === f.id);
+      return `<div class="front-card"><div class="ph">${face(g.id, 48, 'face')}<div><h3 style="margin:0">${esc(frontName(st, f))}</h3><div class="sub">領主 ${nameLink(g)}　${rankName(st, g)}${g.tozama ? `・外様（旧${esc(clanName(st, g.tozama))}家）` : ''}　恩${Math.round(onOf(g))}（${onLabel(onOf(g))}）・統率${g.lea}・魅力${g.cha}</div></div></div>
+        <div class="actions" style="margin:6px 0">${boss ? `<span class="hint" style="margin:0">方針は寄親に従う（${R.FRONT_POLICY_NAME[pf.policy]}）</span>` : `<select data-fpol="${f.id}" aria-label="方針">${(['attack', 'defend', 'build'] as const).map((p) => `<option value="${p}" ${f.policy === p ? 'selected' : ''}>${R.FRONT_POLICY_NAME[p]}</option>`).join('')}</select>${tsel}`}${bsel}</div>
+        <dl class="kv"><dt>知行</dt><dd>${fiefKoku(st, f).toFixed(1)}万石・${f.castles.length}城${fiefCap(g) === Infinity ? '' : ` / ${fiefCap(g)}城まで`}</dd>
+          <dt>城</dt><dd>${fc.map((c) => `${esc(c.name)}${c.i === f.seat ? '（居城）' : ''} <button class="mini" data-act="fief-remove" data-id="${c.i}" title="召し上げると恩が${Math.round(R.fiefOn(castleKoku(c)))}下がる">召し上げ</button>`).join('　')}</dd>
+          ${more.length ? `<dt>加増</dt><dd><select data-fgrant="${g.id}" aria-label="加増する城"><option value="">城を足す…</option>${castleOpts(more, (c) => { const o = frontOfCastle(st, c); return `<option value="${c.i}">${esc(c.name)}（${castleKoku(c).toFixed(1)}万石${o ? `・今は${esc(frontName(st, o))}` : ''}）</option>`; })}</select></dd>` : ''}
+          <dt>領の蔵</dt><dd>金${fmt(f.gold ?? 0)}貫・兵糧${fmt(f.food ?? 0)}石</dd>
+          <dt>陪臣</dt><dd>${bs.length ? bs.map((x) => `${nameLink(x)}（${esc(R.RANK_NAME[x.rank])}・恩${Math.round(onOf(x))}） <button class="mini" data-act="fief-direct" data-id="${x.id}" title="主の恩が${Math.round((R.FIEF_PULL_ON[x.rank] ?? 3) * (g.tozama ? R.TOZAMA_PULL : 1))}下がる">${g.tozama ? '引き抜く' : '直参に'}</button>`).join('　') : 'なし'}
+            ${addable.length ? `<div style="margin-top:4px"><select data-fbai="${f.id}" aria-label="陪臣に付ける"><option value="">直参を陪臣に付ける…</option>${genOpts(addable, (x) => `<option value="${x.id}">${esc(x.name)}（統${x.lea}・${esc(st.castles[x.loc].name)}）</option>`)}</select></div>` : ''}</dd>
           <dt>部隊</dt><dd>${fa.length ? fa.map((a) => `${esc(st.generals[a.main].name)}隊 ${fmt(a.troops)}`).join('・') : 'なし'}（計${fmt(fa.reduce((x, a) => x + a.troops, 0))}人）</dd>
-          <dt>軍団長の力</dt><dd>補充 月+${Math.round(g.lea * R.FRONT_REINF)}人/部隊・担当の城の治安 月+${R.frontChian(g.cha).toFixed(1)}・合戦の見込みの読み違い ±${Math.round(R.frontNoise(g.int) * 100)}%</dd></dl></div>`;
+          ${!boss ? `<dt>与力</dt><dd>${yoriko.length ? yoriko.map((x) => esc(frontName(st, x))).join('・') : 'なし'}${fs.length > 1 ? ` <button class="mini" data-act="yoriki-open" data-id="${f.id}" aria-expanded="${yorikiFor === f.id}">${yorikiFor === f.id ? '閉じる' : '与力を付ける・外す'}</button>` : ''}</dd>` : ''}
+          <dt>領主の力</dt><dd>補充 月+${Math.round(g.lea * R.FRONT_REINF)}人/部隊・領の城の治安 月+${R.frontChian(g.cha).toFixed(1)}</dd></dl>
+        ${!boss && yorikiFor === f.id ? `<h4 style="margin:10px 0 0">${esc(g.name)}の与力にする城持ち（チェックした者が与力。近い順）</h4>${yorikiList(st, f)}` : ''}
+        <div class="actions"><button class="mini" data-act="front-off" data-id="${f.id}">領をすべて召し上げる</button></div></div>`;
     };
-    return `<p class="lede">方面軍団 ${fs.length} / ${max}（城3つ以上で1、石高${R.FRONT_KOKU}万石ごとに+1、最大${R.FRONT_MAX}）。方面の部隊は自分では動かせず、評定終了のときに軍団長が方針に従って動かす。</p>
-      ${fs.length < max ? (cands.length ? `<div class="actions"><select id="sel-front-leader" aria-label="軍団長">${cands.map((g) => `<option value="${g.id}">${esc(g.name)}（${rankName(st, g)}・統率${g.lea}・魅力${g.cha}・知略${g.int}）</option>`).join('')}</select><button class="act primary" data-act="front-new">方面軍団を設ける</button></div>` : '<p class="hint">軍団長にできる宿老・一門がいない。</p>') : max ? '<p class="hint">これ以上は設けられない（石高が増えると増える）。</p>' : '<p class="hint">城が3つ以上になると設けられる。</p>'}
+    return `${heirBlock(st)}<p class="lede">城持ち ${fs.length}人。知行 ${(kokuAll - kokuDirect).toFixed(1)}万石・直轄（蔵入地）${kokuDirect.toFixed(1)}万石（${direct.length}城）。領の年貢・商いは8割が領に入り、${Math.round(R.FIEF_TRIBUTE * 100)}%が上納される。領の部隊は自分では動かせず、評定終了のときに領主が方針に従って動かす。</p>
+      <p class="hint" style="margin:0 0 4px">地図で当家の城を押し、城の札の「知行」からその城を与えることもできる。</p>
+      ${cands.length ? `<div class="actions"><select id="sel-fief-gen" aria-label="城を与える武将">${genOpts(cands, (g) => `<option value="${g.id}">${esc(g.name)}（未払い${dueOf(g)}・恩${Math.round(onOf(g))}${fiefOf(st, g) ? `・${fiefOf(st, g)!.castles.length}城` : ''}）</option>`)}</select><select id="sel-fief-castle" aria-label="与える城">${castleOpts(castles, (c) => { const o = frontOfCastle(st, c); return `<option value="${c.i}">${esc(c.name)}（${castleKoku(c).toFixed(1)}万石${o && !o.vacant ? `・${esc(frontName(st, o))}` : ''}）</option>`; })}</select><button class="act primary" data-act="fief-grant">城を与える</button></div>` : '<p class="hint">城を与えられる者がいない（足軽大将以上の直参）。</p>'}
       ${fs.map(card).join('')}
-      ${fs.length ? `<h3 style="margin-top:12px">城の割り当て</h3><div class="tbl-wrap"><table><thead><tr><th>城</th><th>城主</th><th class="n">城兵</th><th>方面</th></tr></thead><tbody>
-        ${castles.map((c) => `<tr><td>${esc(c.name)}</td><td>${c.governor ? esc(st.generals[c.governor].name) : '—'}</td><td class="n">${fmt(c.garrison)}</td><td><select data-fcastle="${c.i}" aria-label="${esc(c.name)}の方面">${fopt(frontOfCastle(st, c)?.id)}</select></td></tr>`).join('')}
-        </tbody></table></div>
-        <h3 style="margin-top:12px">部隊の割り当て</h3><div class="tbl-wrap"><table><thead><tr><th>部隊</th><th>所在</th><th class="n">兵</th><th>方面</th></tr></thead><tbody>
-        ${as.map((a) => `<tr><td><button class="mini" data-act="goto-army" data-id="${a.id}">${esc(st.generals[a.main].name)}隊</button></td><td>${esc(castleAt(st, a.hex)?.name ?? PROVINCES[HEXES[a.hex].p].name)}</td><td class="n">${fmt(a.troops)}</td><td><select data-farmy="${a.id}" aria-label="${esc(st.generals[a.main].name)}隊の方面">${fopt(a.front)}</select></td></tr>`).join('')}
-        </tbody></table></div>` : ''}
       ${hints([
-        '方針 — 攻略: 目標の家か城へ攻め込む（目標の家の手前をふさぐ城も攻める）。目標を任せれば、担当の城から6ヘックスほどの敵城を軍団長が選ぶ。担当の城が危なければ戻って守る。',
-        '防衛: 担当の城を守り、2ヘックス以内に迫った敵だけを叩く。軍備増強: 城にとどまって兵を補充し、足軽を多めに雇い（給金が収入の45%まで）、鉄砲・大筒を持たせて練度を上げる。城に取りついた敵だけを叩く。',
-        '方面の中のことも軍団長が行う: 担当の城にいる待機の武将で新しい部隊を編成し（一月に一つ）、軍団の傘下・城主を埋め、蔵の鉄砲・大筒を配り、足軽を雇う。金と兵糧は家の蔵から出る。',
-        `軍団長は宿老か一門（当主を除く）。統率1ごとに方面の部隊の補充が月+${R.FRONT_REINF}人、魅力が40を超える分だけ担当の城の治安が上がり、知略が低いほど合戦の見込みを読み違える。方面が戦った月は軍団長に功績+${R.FRONT_MERIT}。方面の部隊が落とした城はその方面に入る。軍団長が討死・捕縛されると方面は解かれる。`,
+        `城を与えると、その石高1万石ごとに未払いの功${R.FIEF_PAY}を報い、恩が上がる（8〜25）。召し上げると同じだけ下がる。持てる城は宿老なら上限なし、侍大将${R.FIEF_CAP[1]}城、足軽大将${R.FIEF_CAP[2]}城、足軽組頭は持てない。飛び地でもよい。`,
+        '領の蔵: 年貢・商いの8割が入り、領の部隊の兵糧と足軽の給金、陪臣の恩賞をここから払う。余った金は領の城の開発に回る。直轄の城の年貢・商いはすべて当家に入る。',
+        `降った家: 降伏勧告に応じた家の当主は本領をそのまま安堵されて城持ち（外様）になり、家臣はその陪臣になる。蔵の兵糧と金はその領の蔵に、鉄砲は当家の蔵に入る。外様の家臣を引き抜く（直参に引き上げる）と、主の恩は${R.TOZAMA_PULL}倍下がる。外様は宿老の枠を使わない。`,
+        '陪臣: 城持ちの家来。恩賞と取り立ては主が行い、当家は直接は使えない。主が謀反すれば主に従う。直参に引き上げると当家で使えるが、主の恩が下がる（重臣ほど大きく）。',
+        '方針 — 攻略: 目標の家か城へ攻め込む。防衛: 領の城を守り、迫った敵だけを叩く。軍備増強: 城にとどまって兵を補充し、足軽を雇い、練度を上げる。与力にすると寄親の方針と目標に従う。',
+        '領の部隊が落とした城は、身分の枠に空きがあればその領に入る（なければ直轄）。領主が亡くなったり家を去ったりしたら、後継ぎを選ぶ（それまでは直轄として扱う）。',
       ])}`;
   },
   corps: (st) => {
-    const as = clanArmies(st, st.player).filter((a) => !a.ikki).sort((a, b) => b.troops - a.troops);
+    const asAll = clanArmies(st, st.player).filter((a) => !a.ikki && !delegatedArmy(st, a)).sort((a, b) => b.troops - a.troops);
+    const nDeleg = clanArmies(st, st.player).filter((a) => !a.ikki && delegatedArmy(st, a)).length;
     const free = Object.values(st.generals).filter((g) => isFree(st, g));
     const near = (a: Army) => castleAt(st, a.hex)?.owner === st.player || NEIGHBORS[a.hex].some((j) => castleAt(st, j)?.owner === st.player);
+    // 隊の空き（主将から下へ、身分の枠ごと）
+    const slotsOf = (a: Army): number => { const walk = (gid: string): number => { const lv = levelOf(st, st.generals[gid]), kids = childrenOf(st, a, gid); return (lv < 3 ? R.CORPS_CHILDREN - kids.length : 0) + kids.reduce((t, k) => t + walk(k.id), 0); }; return walk(a.main); };
+    const withRoom = asAll.filter((a) => near(a) && slotsOf(a) > 0 && !fillBlock(st, a)); // 待機の武将で埋められる空きがある隊
+    const as = corpsAll ? asAll : withRoom;
+    const fillable = withRoom.filter((a) => !fillBlock(st, a));
+    const line = (a: Army) => {
+      const open = corpsOpen.has(a.id), editable = near(a), sl = slotsOf(a), why = editable ? fillBlock(st, a) : '出陣中';
+      return `<div class="corps-card"><div class="corps-head"><button class="mini" data-act="goto-army" data-id="${a.id}">${esc(st.generals[a.main].name)}隊</button>　兵${fmt(a.troops)} / ${fmt(maxTroops(st, a))}・傘下${staffOf(a).length}人${sl && editable ? `・<b>空き${sl}</b>` : ''}${editable ? '' : '<span class="hint" style="margin:0">（出陣中）</span>'}
+        ${editable && sl ? ` <button class="mini" data-act="corps-fill" data-id="${a.id}" ${why ? `disabled title="${esc(why)}"` : ''}>空きを埋める</button>` : ''} <button class="mini" data-act="corps-open" data-id="${a.id}" aria-expanded="${open}">${open ? '閉じる' : '顔ぶれ・入れ替え'}</button></div>${open ? card(a) : ''}</div>`;
+    };
     const card = (a: Army) => {
       const editable = near(a);
       const node = (g: General, depth: number): string => {
@@ -1691,11 +1912,12 @@ const TABS: Record<string, (st: GameState) => string> = {
         const row = `<div class="corps-row" style="--d:${depth}">${depth ? '└ ' : ''}${face(g.id, 32, 'face face-sm')}${nameLink(g)}<span class="pill">${depth === 0 ? '主将' : rankName(st, g)}</span><span class="hint corps-stat" style="margin:0">統${g.lea} 武${g.bra} 知${g.int}</span>${depth > 0 && editable ? ` <button class="mini" data-act="corps-out" data-id="${g.id}">外す</button>` : ''}</div>`;
         return row + kids.map((k) => node(k, depth + 1)).join('') + slotRow;
       };
-      const rows = node(st.generals[a.main], 0);
-      return `<div class="corps-card"><div class="corps-head"><button class="mini" data-act="goto-army" data-id="${a.id}">${esc(st.generals[a.main].name)}隊</button>　兵${fmt(a.troops)} / 上限${fmt(maxTroops(st, a))}・練度${Math.round(drillOf(a))}・傘下${staffOf(a).length}人${editable ? '' : '<span class="hint" style="margin:0">（出陣中は編成を変えられない）</span>'}${editable ? (() => { const why = fillBlock(st, a); return ` <button class="mini" data-act="corps-fill" data-id="${a.id}" ${why ? `disabled title="${esc(why)}"` : ''}>空きを埋める（おまかせ）</button>`; })() : ''}</div>${rows}</div>`;
+      return `<div style="margin-top:6px">${node(st.generals[a.main], 0)}</div>`;
     };
-    return `${dNote(st, 'staff')}<p class="lede">待機中の武将 ${free.length}人。主将の下に、ひとつ下の身分の武将を${R.CORPS_CHILDREN}人まで置ける（その下にも${R.CORPS_CHILDREN}人まで）。</p>
-      ${as.length ? as.map(card).join('') : '<p class="lede">軍団はない。城の画面で編成する。</p>'}
+    return `${dNote(st, 'staff')}<p class="lede">待機中の武将 ${free.length}人。主将の下に、ひとつ下の身分の武将を${R.CORPS_CHILDREN}人まで置ける（その下にも${R.CORPS_CHILDREN}人まで）。${nDeleg ? `領・委任の部隊（${nDeleg}隊）はここに出ない（領主・AIが編成する）。` : ''}</p>
+      <div class="subtabs"><button aria-selected="${!corpsAll}" data-act="corps-all" data-id="0">埋められる空きのある隊（${withRoom.length}）</button><button aria-selected="${corpsAll}" data-act="corps-all" data-id="1">すべての隊（${asAll.length}）</button></div>
+      ${fillable.length && free.length ? `<div class="actions" style="margin:4px 0 8px"><button class="act primary" data-act="corps-fill-all">すべての隊の空きをおまかせで埋める（${fillable.length}隊・待機${free.length}人から）</button></div>` : ''}
+      ${as.length ? as.map(line).join('') : `<p class="lede">${asAll.length ? '待機の武将で埋められる空きはない（「すべての隊」で顔ぶれを入れ替えられる）。' : '軍団はない。城の画面で編成する。'}</p>`}
       ${hints([
         '当主・宿老の下に侍大将、侍大将の下に足軽大将、足軽大将の下に足軽組頭を、それぞれ2人まで置ける。一門は侍大将以上として扱う。自城か隣にいる軍団だけ編成を変えられる。',
         `兵数の上限＝主将の上限×${R.CORPS_MAIN_TROOP}＋傘下の武将それぞれの上限×${R.CORPS_SUB_TROOP}（武将の上限＝（3000＋統率×100）×身分の倍率）。`,
@@ -1742,8 +1964,8 @@ const TABS: Record<string, (st: GameState) => string> = {
     `練度と足軽: 部隊には練度があり、自城の近くで過ごすと上がり、農兵を補充すると下がる。足軽（常備兵）は金で雇い（1人${R.ASHI_HIRE}貫、給金 月${R.ASHI_WAGE}貫）、練度を100まで上げられ、季節を問わない。農繁期（田植え・刈り入れ）に農兵を領外へ出すと秋の収穫が減る。詳しくは「軍事」の足軽と練度。`,
     `軍団の編成（「人事」の軍団）: 当主・宿老の下に侍大将、その下に足軽大将、その下に足軽組頭を、それぞれ${R.CORPS_CHILDREN}人まで置ける。兵数の上限＝主将の上限×${R.CORPS_MAIN_TROOP}＋傘下の武将それぞれの上限×${R.CORPS_SUB_TROOP}。合戦では主将と主将のすぐ下の武将が隊を率いる。軍団が戦えば傘下の全員に功績が入る。`,
     `南蛮貿易と布教: 毎年${R.SHIP_MONTH}月に南蛮船が南蛮港（平戸・府内・坊津・堺、1570年から長崎）に来て、港の持ち主に南蛮市が開く（鉄砲が安く、大筒と南蛮の品が買える）。宣教師が布教の許しを願い出てくる。許せば商業と来航が伸びるが寺社が反発し、禁じれば洗礼を受けた家臣が去ることがある（「外交」の布教）。`,
-    `方面軍団（「人事」の方面軍団）: 宿老・一門を軍団長にして城と部隊を任せると、評定終了のときに方針（攻略・防衛・軍備増強）に従って軍団長が動かす。方面の中の編成・城主・鉄砲や大筒の配備・足軽の雇い入れも任せる。「内政」の委任で軍事を任せれば、直轄の部隊と城もAIが動かす。`,
-    '御恩と奉公: 家臣には恩がある。功を立てたら「人事」の恩賞で報いる（感状・加増・取り立て・下賜）。報いずにいれば恩が下がり、出奔・城ごとの寝返り・方面軍団の謀反を招く。名声の高い家臣には外から官の誘いが来る。縁のある者は去就を共にする。落とした城は仕置を決め、残り火に気をつける。当主が病に倒れたら跡継ぎと遺言を定める。',
+    `知行（「人事」の知行）: 足軽大将以上の直参に城を与えると城持ちになる（宿老は何城でも、侍大将${R.FIEF_CAP[1]}城、足軽大将${R.FIEF_CAP[2]}城）。領の年貢・商いの8割は領に入り、${Math.round(R.FIEF_TRIBUTE * 100)}%が上納される。領の部隊は方針（攻略・防衛・軍備増強）に従って領主が動かし、陪臣の恩賞も領主が払う。領主がいなくなれば後継ぎを選ぶ。「内政」の委任で軍事を任せれば、直轄の部隊と城もAIが動かす。`,
+    '御恩と奉公: 家臣には恩がある。功を立てたら「人事」の恩賞で報いる（感状・加増・取り立て・下賜）。報いずにいれば恩が下がり、出奔・城ごとの寝返り・城持ちの謀反を招く。名声の高い家臣には外から官の誘いが来る。縁のある者は去就を共にする。落とした城は仕置を決め、残り火に気をつける。当主が病に倒れたら跡継ぎと遺言を定める。',
     '大義名分: 戦には名分が要る。名分は将軍から発する（御内書・幕府の職・守護職）ほか、旧領の回復・仇討ち・反撃・救援など。名分のない戦（私戦）は家臣・民・諸家に支持されない。出陣の画面で名分を確かめ、「外交」の幕府で願い出る。',
   ]),
 };
@@ -1947,9 +2169,10 @@ function showEnding(st: GameState) {
 // ───────── 幕間（唐入りの動機）: 天下統一ののち、五つの章を続けて見せ、大評定で決する ─────────
 // 語りは人物ごとの言い分として出す（地の文で断定しない）。数字はゲームの状態から
 type ILine = { gen: string; name: string; color: string; label: string; text: string };
-type IStep = { ch: string; art: 'hyojo' | 'sekaizu' | 'minato' } & ({ t: 'line'; l: ILine } | { t: 'choice'; id: string; prompt: string; opts: [string, string, string][] } | { t: 'final' });
-type IVars = { offer: 'mis' | 'capitan' | 'merchant'; speaker: string; investigated: boolean; slaveBan: boolean; misId: string | null };
-let isteps: IStep[] = [], istep = 0, ivars: IVars = { offer: 'merchant', speaker: '', investigated: false, slaveBan: false, misId: null };
+type IStep = { ch: string; art: 'hyojo' | 'sekaizu' | 'minato' } & ({ t: 'line'; l: ILine } | { t: 'choice'; id: string; prompt: string; opts: [string, string, string][] });
+type IVars = { offer: 'mis' | 'capitan' | 'merchant'; speaker: string; investigated: boolean; slaveBan: boolean; misId: string | null; ships: boolean; expel: boolean; cause: string };
+const IVARS0 = (): IVars => ({ offer: 'merchant', speaker: '', investigated: false, slaveBan: false, misId: null, ships: false, expel: false, cause: 'onsho' });
+let isteps: IStep[] = [], istep = 0, ivars: IVars = IVARS0();
 // 場面の絵
 const IART = () => ({ hyojo: HYOJO_ART, sekaizu: SEKAIZU_ART, minato: MINATO_ART });
 const CH = ['第一章　恩賞の行き詰まり', '第二章　世界図', '第三章　湊の噂', '第四章　南の海の知らせ', '第五章　国の疲れ', '大評定'];
@@ -1991,10 +2214,12 @@ function iscript(st: GameState): IStep[] {
     line(1, 'sekaizu', pl(m, '世界図の献上', '天下一統、まことにおめでとうございます。お祝いに、南蛮の地球儀と世界図をお持ちいたしました。日の本は、この海の東の端にございます。'));
     line(1, 'sekaizu', pl(m, '海の外', '海を渡れば朝鮮、その先に大明。明は日の本の十倍も広く、さらに西には天竺、その果てに我らの国々がございます。世界は、かくも広いのです。'));
     line(1, 'sekaizu', pl(m, '大船の申し出', 'もし殿が唐へ渡られるお考えなら、ポルトガルの大船を二艘、わが会がご用意いたしましょう。その代わり、殿の国々で教えを広めることを、末永くお許しくださいませ。'));
+    L.push({ ch: CH[1], art: 'sekaizu', t: 'choice', id: 'ships', prompt: '宣教師の申し出を、どうするか。', opts: [['yes', '大船を借りる', '唐へ渡るときの船が増える。その代わり、布教を許し続けることになる。'], ['no', '断る', '借りは作らない。']] });
   } else if (c.me.mission === 'ban' || (st.ships ?? []).length) {
     ivars.offer = 'capitan'; ivars.speaker = 'capitan';
     line(1, 'sekaizu', pl('capitan', '世界図の献上', '殿、天下一統のお祝いです。南蛮の世界図と地球儀、ごらんください。日の本は、ここ。海の向こうに朝鮮と大明、その先は天竺と南蛮です。'));
     line(1, 'sekaizu', pl('capitan', '大船の申し出', '唐へ渡られるなら、大船も鉄砲も、銀次第でいかようにも。わたしどもは商人です。よいお取引を。'));
+    L.push({ ch: CH[1], art: 'sekaizu', t: 'choice', id: 'ships', prompt: 'カピタンの申し出を、どうするか。', opts: [['yes', '大船を買い入れる', '銀で南蛮の船を雇う。唐へ渡るときの船が増える。'], ['no', '見送る', '今は船を求めない。']] });
   } else {
     ivars.offer = 'merchant'; ivars.speaker = tradeId(st);
     line(1, 'sekaizu', pl(tradeId(st), '世界図の献上', '天下一統、祝着至極に存じまする。堺の蔵より、南蛮渡りの世界図を献じまする。大明との勘合が絶えて久しく、商いは細るばかりでござる。'));
@@ -2030,6 +2255,7 @@ function iscriptRest(st: GameState, investigated: boolean): IStep[] {
   line(3, 'minato', gl(st, c.wise, '見方', '教えを広めた先に兵が来る、と見る者もおりまする。呂宋がそうであったと。……また、南蛮が明を取る前に、日の本が先に明を押さえるべし、と申す者もございます。'));
   if (c.kiri) line(3, 'minato', gl(st, c.kiri, '反論', '伴天連は国を奪いはしませぬ。わたしは教えに救われ申した。疑うなら、銀に目の眩んだ南蛮の商人をこそ疑われよ。'));
   line(3, 'minato', pl(tradeId(st), '反論', '明を取るなど夢物語にございます。南蛮の船は、銀と生糸のために来る。恐れるより、商いで富むことをお考えくだされ。'));
+  if (ivars.misId) L.push({ ch: CH[3], art: 'minato', t: 'choice', id: 'expel', prompt: '伴天連を、どうするか。', opts: [['expel', '伴天連を追放する', `宣教師を国外へ退ける（禁教）。南蛮の商いも細る。${ivars.ships && ivars.offer === 'mis' ? '借りるはずの大船の話も流れる。' : ''}`], ['stay', '留め置く', '布教はこれまでどおり許す。']] });
   // 第五章
   const low = clanCastles(st, st.player).filter((x) => x.chian < 40).length;
   const ember = clanCastles(st, st.player).filter((x) => (x.ember ?? 0) > 0).length;
@@ -2039,8 +2265,18 @@ function iscriptRest(st: GameState, investigated: boolean): IStep[] {
   line(5, 'hyojo', gl(st, c.hawk, '出兵', '海を渡れば土地は限りない。功ある者に報いるには、これしかございませぬ！ 日の本の武を、明の者どもに見せてやりましょうぞ。'));
   line(5, 'hyojo', gl(st, c.wise, '先んじる', '南蛮が明を取れば、次は日の本。ならば先に明を押さえ、海を我らのものとすべきかと存じます。……ただし、これは賭けにございます。'));
   line(5, 'hyojo', pl(tradeId(st), '交易', 'まずは使いを出し、明に勘合を開かせるべし。戦は商いを潰しまする。堺も博多も、戦より銀を望んでおりまする。'));
-  line(5, 'hyojo', gl(st, c.dove, '慎重', '国の傷はまだ癒えておりませぬ。今は田を耕し、城を直すときでございます。どうしてもと仰せなら、まず対馬の宗氏を通じて朝鮮に使いを出し、道を開かれませ。'));
-  L.push({ ch: CH[5], art: 'hyojo', t: 'final' });
+  line(5, 'hyojo', gl(st, c.dove, '慎重', '国の傷はまだ癒えておりませぬ。今は田を耕し、城を直すときでございます。'));
+  L.push({ ch: CH[5], art: 'hyojo', t: 'choice', id: 'cause', prompt: '海の外へ、兵を出すか。何を大義とするか。', opts: [['onsho', '恩賞のため', '功ある者に海の外の土地で報いる。武断の家臣が喜び、慎重な者は不満を抱く。'], ['saki', '南蛮に先んじて', '南蛮が明を取る前に。知略の家臣が乗り、交易を望む商人は渋る。'], ['kango', '勘合を開かせる', '明に交易を認めさせるため。商人が後押しする。'], ['ikou', '天下人の威光', '日の本の主の名を海の外に轟かせる。'], ['peace', '海の外へは出ない', '天下の静謐を守り、太平の世を築く。ここで物語を締めくくる。']] });
+  return L;
+}
+// 出兵と決めたあと: 朝鮮への最初の一手
+function iscriptFirst(st: GameState): IStep[] {
+  const c = icast(st);
+  const L: IStep[] = [];
+  const line = (l: ILine | null) => { if (l) L.push({ ch: CH[5], art: 'hyojo', t: 'line', l }); };
+  line(gl(st, c.dove, '最初の一手', 'ならば、せめて最初の一手は慎重に。まず対馬の宗氏を通じて朝鮮に使いを出し、道を開かれませ。断られれば、それが名分となりましょう。'));
+  line(gl(st, c.hawk, '最初の一手', '使いなど無用。時を与えれば、朝鮮も明も備えを固めまする。ただちに陣触を下されませ！'));
+  L.push({ ch: CH[5], art: 'hyojo', t: 'choice', id: 'first', prompt: '朝鮮への最初の一手は。', opts: [['envoy', '対馬の宗氏を通じて使いを送る', '朝鮮に道を開くよう求める。断られれば、それが出兵の名分になる。'], ['now', 'ただちに陣触を下す', '使いは送らず、全国の大名に渡海の支度を命じる。']] });
   return L;
 }
 
@@ -2048,7 +2284,7 @@ function openInterlude(st: GameState) {
   $('ending').hidden = true;
   let el = document.getElementById('interlude');
   if (!el) { el = document.createElement('div'); el.id = 'interlude'; document.body.appendChild(el); el.addEventListener('click', onInterludeClick); }
-  ivars = { offer: 'merchant', speaker: '', investigated: false, slaveBan: false, misId: null };
+  ivars = IVARS0();
   isteps = iscript(st); istep = 0;
   drawInterlude(st);
   el.hidden = false;
@@ -2061,26 +2297,12 @@ function drawInterlude(st: GameState) {
   if (p.t === 'line') {
     const l = p.l;
     body = `<div class="il-quote" data-act="il-next"><div class="quote">${face(l.gen, 120) || `<span class="mon mon-q" style="width:120px;height:150px;font-size:30px;background:${l.color}">${esc(l.name.slice(0, 2))}</span>`}<div class="qbody"><div class="qname">${esc(l.name)}<span>${esc(l.label)}</span></div><p>「${esc(l.text)}」</p></div></div><div class="il-more">押すと次へ</div></div>`;
-  } else if (p.t === 'choice') {
-    body = `<p class="il-ask">${esc(p.prompt)}</p><div class="il-opts">${p.opts.map(([k, t, d]) => `<button class="il-opt" data-act="il-choose" data-id="${k}"><b>${esc(t)}</b><span>${esc(d)}</span></button>`).join('')}</div>`;
-  } else body = finalHtml(st);
+  } else {
+    body = `<p class="il-ask">${esc(p.prompt)}</p><div class="il-opts">${p.opts.map(([k, t, d]) => `<button class="il-opt" data-act="il-choose" data-id="${k}"><b>${esc(t)}</b><span>${esc(d)}</span></button>`).join('')}</div>${p.id === 'cause' ? '<p class="hint il-note">唐入りは、朝鮮と明の人々にとっては侵略の戦であり、大きな惨禍を残した。この先では渡海の兵站、義兵や水軍の抵抗、厭戦も描く。</p>' : ''}`;
+  }
   el.innerHTML = `<img class="end-art" src="${IART()[p.art]}" alt=""><div class="end-veil"></div>
     <div class="il-head"><h2>${esc(p.ch)}</h2><small>${esc(dateLabel(st))}　天下一統ののち</small></div>
     <div class="end-text il-text">${body}</div>`;
-}
-function finalHtml(st: GameState) {
-  const radio = (name: string, opts: [string, string, string][], def: string) => opts.map(([k, t, d]) => `<label class="il-opt il-radio"><input type="radio" name="${name}" value="${k}" ${k === def ? 'checked' : ''}><b>${esc(t)}</b><span>${esc(d)}</span></label>`).join('');
-  const nanban: [string, string, string][] = [];
-  if (ivars.offer === 'mis') nanban.push(['ships', '南蛮の大船を借りる', '宣教師の申し出を受ける。渡海の船が増えるが、布教を許し続けることになる。']);
-  if (ivars.offer === 'capitan') nanban.push(['ships', '南蛮の大船を買い入れる', '銀で南蛮の船を雇う。渡海の船が増える。']);
-  if (ivars.misId) nanban.push(['expel', '伴天連を追放する', '宣教師を国外へ退ける（禁教）。大船は借りられず、南蛮の商いも細る。']);
-  if (!ivars.slaveBan) nanban.push(['slave', '人の売り買いを禁じる', '南蛮の商いは少し細るが、民は安堵する（全城の治安＋3）。']);
-  return `<p class="il-ask">海の外へ、兵を出すか。</p>
-    <div class="il-q"><div class="il-qh">大義</div><div class="il-opts">${radio('cause', [['onsho', '恩賞のため', '功ある者に海の外の土地で報いる。武断の家臣が喜び、慎重な者は不満を抱く。'], ['saki', '南蛮に先んじて', '南蛮が明を取る前に。知略の家臣が乗り、交易を望む商人は渋る。'], ['kango', '勘合を開かせる', '明に交易を認めさせるため。商人が後押しする。'], ['ikou', '天下人の威光', '日の本の主の名を海の外に轟かせる。'], ['peace', '海の外へは出ない', '天下の静謐を守り、太平の世を築く。ここで物語を締めくくる。']], 'onsho')}</div></div>
-    ${nanban.length ? `<div class="il-q"><div class="il-qh">南蛮への方針（いくつでも）</div><div class="il-opts">${nanban.map(([k, t, d]) => `<label class="il-opt il-radio"><input type="checkbox" name="nanban" value="${k}"><b>${esc(t)}</b><span>${esc(d)}</span></label>`).join('')}</div></div>` : ''}
-    <div class="il-q"><div class="il-qh">朝鮮への最初の一手</div><div class="il-opts">${radio('first', [['envoy', '対馬の宗氏を通じて使いを送る', '朝鮮に道を開くよう求める。断られれば、それが出兵の名分になる。'], ['now', 'ただちに陣触を下す', '使いは送らず、全国の大名に渡海の支度を命じる。']], 'envoy')}</div></div>
-    <div class="actions"><button class="act primary" data-act="il-decide">決する</button></div>
-    <p class="hint il-note">唐入りは、朝鮮と明の人々にとっては侵略の戦であり、大きな惨禍を残した。この先では渡海の兵站、義兵や水軍の抵抗、厭戦も描く。</p>`;
 }
 const CAUSE_NAME: Record<string, string> = { onsho: '恩賞のため', saki: '南蛮に先んじて', kango: '勘合を開かせる', ikou: '天下人の威光', peace: '海の外へは出ない' };
 function onInterludeClick(e: Event) {
@@ -2091,31 +2313,33 @@ function onInterludeClick(e: Event) {
   if (act === 'il-choose') {
     const p = isteps[istep];
     if (p.t !== 'choice') return;
-    if (p.id === 'investigate') { ivars.investigated = t.dataset.id === 'yes'; isteps.splice(istep + 1, 0, ...iscriptRest(st, ivars.investigated)); }
-    if (p.id === 'slave' && t.dataset.id === 'ban') { ivars.slaveBan = true; banSlaveTrade(st); }
-    istep++; drawInterlude(st); return;
-  }
-  if (act === 'il-decide') {
-    const root = $('interlude');
-    const cause = (root.querySelector('input[name="cause"]:checked') as HTMLInputElement | null)?.value ?? 'onsho';
-    const first = (root.querySelector('input[name="first"]:checked') as HTMLInputElement | null)?.value ?? 'envoy';
-    const nb = Array.from(root.querySelectorAll<HTMLInputElement>('input[name="nanban"]:checked'), (x) => x.value);
-    const expel = nb.includes('expel'), ships = nb.includes('ships') && !(expel && ivars.offer === 'mis');
-    if (nb.includes('slave') && !ivars.slaveBan) { ivars.slaveBan = true; banSlaveTrade(st); }
-    if (expel) { setMission(st, st.player, 'ban'); addLog(st, '伴天連を国外へ追放した。', 'info', true); }
-    const go = cause !== 'peace';
-    // 大義に沿った者は恩が上がり、退けられた者は下がる
+    const v = t.dataset.id ?? '';
     const c = icast(st);
-    const nudge = (g: General | undefined, d: number) => { if (g) g.on = Math.max(0, Math.min(100, onOf(g) + d)); };
-    nudge(c.hawk, go && cause === 'onsho' ? 6 : go ? 2 : -8);
-    nudge(c.wise, cause === 'saki' ? 6 : 0);
-    nudge(c.dove, go ? -6 : 6);
-    st.karairi = { choice: go ? 'go' : 'peace', cause, ships, expel, slaveBan: ivars.slaveBan, envoy: go && first === 'envoy', investigated: ivars.investigated, turn: st.turn, speaker: ivars.speaker };
-    addLog(st, go ? `「${CAUSE_NAME[cause]}」を掲げ、唐入りを決した。` : '海の外へは兵を出さぬと決めた。', 'info', true);
-    if (go) { try { localStorage.setItem('sengoku-karairi', JSON.stringify({ clan: st.player, name: st.clans[st.player].name, year: st.year, month: st.month, scenario: st.scenario, ...st.karairi })); } catch { /* 記録できなくても続ける */ } }
-    store(AUTO_KEY, JSON.stringify(st));
-    finale(st);
-    return;
+    const after: IStep[] = [];
+    const say = (l: ILine | null) => { if (l) after.push({ ch: p.ch, art: p.art, t: 'line', l }); };
+    if (p.id === 'ships') {
+      ivars.ships = v === 'yes';
+      const sp = ivars.speaker;
+      say(pl(sp, ivars.ships ? '承知' : '残念', sp === 'capitan'
+        ? (ivars.ships ? 'よいお取引です。船は湊にお回しいたします。銀のご用意を。' : 'さようですか。お気が変わりましたら、いつでも。')
+        : (ivars.ships ? 'ありがたき仰せ。大船二艘、必ずお届けいたします。教えのこと、なにとぞお忘れなきよう。' : '……残念に存じます。されど、殿のお考えが変わることを、神に祈っております。')));
+    }
+    if (p.id === 'investigate') { ivars.investigated = v === 'yes'; after.push(...iscriptRest(st, ivars.investigated)); }
+    if (p.id === 'slave' && v === 'ban') { ivars.slaveBan = true; banSlaveTrade(st); }
+    if (p.id === 'expel') {
+      ivars.expel = v === 'expel';
+      if (ivars.expel) { if (ivars.offer === 'mis') ivars.ships = false; setMission(st, st.player, 'ban'); addLog(st, '伴天連を国外へ追放した。', 'info', true); }
+      if (ivars.expel && c.kiri) say(gl(st, c.kiri, '嘆き', '……殿のご裁断とあらば、従いまする。されど、わが胸の内の教えまでは、追い出せませぬ。'));
+      else if (!ivars.expel && ivars.misId) say(pl(ivars.misId, '安堵', '殿のご寛容に感謝いたします。我らも、疑いを招かぬよう努めます。'));
+    }
+    if (p.id === 'cause') {
+      ivars.cause = v;
+      if (v === 'peace') { decideInterlude(st, 'envoy'); return; }
+      after.push(...iscriptFirst(st));
+    }
+    if (p.id === 'first') { decideInterlude(st, v); return; }
+    isteps.splice(istep + 1, 0, ...after);
+    istep++; drawInterlude(st); return;
   }
   if (act === 'il-new') { $('interlude').hidden = true; store(AUTO_KEY, null); s = null; openTitle(); return; }
   if (act === 'il-close') { $('interlude').hidden = true; return; }
@@ -2126,6 +2350,20 @@ function onInterludeClick(e: Event) {
     refresh(); openMenu('gunji', 'karairi');
     return;
   }
+}
+function decideInterlude(st: GameState, first: string) {
+  const cause = ivars.cause, go = cause !== 'peace';
+  // 大義に沿った者は恩が上がり、退けられた者は下がる
+  const c = icast(st);
+  const nudge = (g: General | undefined, d: number) => { if (g) g.on = Math.max(0, Math.min(100, onOf(g) + d)); };
+  nudge(c.hawk, go && cause === 'onsho' ? 6 : go ? 2 : -8);
+  nudge(c.wise, cause === 'saki' ? 6 : 0);
+  nudge(c.dove, go ? -6 : 6);
+  st.karairi = { choice: go ? 'go' : 'peace', cause, ships: ivars.ships, expel: ivars.expel, slaveBan: ivars.slaveBan, envoy: go && first === 'envoy', investigated: ivars.investigated, turn: st.turn, speaker: ivars.speaker };
+  addLog(st, go ? `「${CAUSE_NAME[cause]}」を掲げ、唐入りを決した。` : '海の外へは兵を出さぬと決めた。', 'info', true);
+  if (go) { try { localStorage.setItem('sengoku-karairi', JSON.stringify({ clan: st.player, name: st.clans[st.player].name, year: st.year, month: st.month, scenario: st.scenario, ...st.karairi })); } catch { /* 記録できなくても続ける */ } }
+  store(AUTO_KEY, JSON.stringify(st));
+  finale(st);
 }
 function banSlaveTrade(st: GameState) {
   for (const c of clanCastles(st, st.player)) c.chian = Math.min(100, c.chian + 3);
@@ -2186,7 +2424,7 @@ function openMergeSheet(st: GameState, a: Army, b: Army) {
     return `<button class="il-opt" data-act="merge-do" data-id="${k.id}:${o.id}"><b>${esc(K.name)}を大将に${rec ? '（おすすめ）' : ''}</b><span>${esc(rankName(st, K))}・統率${K.lea}・功績${Math.floor(K.merit)}。兵 ${fmt(Math.min(pv.total, cap))}${pv.total > cap ? `（上限${fmt(cap)}。残り${fmt(pv.total - cap)}は${st.generals[o.main].name}が率いて残るか、村へ帰る）` : ''}</span>${pv.face ? `<span class="warn-text">${esc(st.generals[o.main].name)}は功績で勝るのに大将を譲り、面目を失う（恩−${FACE_ON}）</span>` : ''}${pv.rivals.length ? `<span class="warn-text">不仲の${esc(pv.rivals.map((g) => g.name).join('・'))}と同じ軍団になる（双方の恩−${RIVAL_ON}）</span>` : ''}</button>`;
   };
   openModal(`<h2 id="modal-title">合流　${esc(st.generals[a.main].name)}隊 と ${esc(st.generals[b.main].name)}隊</h2>
-    <p class="lede">二つの軍団を一つにする。大将は身分の高いほう。同じ身分なら、当主・方面軍団長・一門・統率の高いほうの順に決まる（選び直せる）。入りきらない武将は、余った兵を率いて残るか、近くの城で待機する。この月の行動を使う。</p>
+    <p class="lede">二つの軍団を一つにする。大将は身分の高いほう。同じ身分なら、当主・城持ち・一門・統率の高いほうの順に決まる（選び直せる）。入りきらない武将は、余った兵を率いて残るか、近くの城で待機する。この月の行動を使う。</p>
     <div class="il-opts naval-opts">${opt(keep, other, true)}${alt ? opt(alt, keep, false) : ''}</div>
     <div class="actions"><button class="act" data-act="close">やめる</button></div>`);
 }
@@ -2271,8 +2509,37 @@ function onModalClick(e: Event) {
   if (act === 'ronin-m') { const g = st.generals[id]; const ok = recruitRonin(st, g, st.player); toast(ok ? `${g.name}が仕官した` : `${g.name}は仕官を断った`); cutin(st, g, ok ? 'roninYes' : 'roninNo'); refresh(); openMenu(); return; }
   if (act === 'gen') { openGeneral(id, menuShown); return; }
   if (act === 'gen-back') { openMenu(); return; }
-  if (act === 'front-new') { const v = ($('modal-body').querySelector('#sel-front-leader') as HTMLSelectElement | null)?.value; const f = v ? createFront(st, v) : null; if (f) toast(`${frontName(st, f)}を設けた`); refresh(); openMenu(); return; }
-  if (act === 'front-off') { const f = frontById(st, +id); if (f) dissolveFront(st, f); refresh(); openMenu(); return; }
+  if (act === 'rakuichi') { const c = st.castles[+id]; const why = rakuichiBlock(st, c); if (why) toast(why); else { enactRakuichi(st, c); toast(`${c.name}に楽市楽座を布いた`); } refresh(); reopen(); return; }
+  if (act === 'kan-up') { const g = st.generals[id]; if (g) { const why = kanBlock(st, g); if (why) toast(why); else { recommendKan(st, g); toast(`${g.name}が${kanName(g)}に任じられた`); cutin(st, g, 'ninkan', { kan: kanName(g) }); } } refresh(); reopen(); return; }
+  if (act === 'sgd-off') { const g = st.generals[id]; if (g) { dismissShugodai(st, g); toast(`${g.name}の守護代を解いた`); } refresh(); reopen(); return; }
+  if (act === 'fief-grant') {
+    const gid = ($('modal-body').querySelector('#sel-fief-gen') as HTMLSelectElement | null)?.value, ci = ($('modal-body').querySelector('#sel-fief-castle') as HTMLSelectElement | null)?.value;
+    const g = gid ? st.generals[gid] : undefined, c = ci ? st.castles[+ci] : undefined;
+    if (g && c) { const why = grantBlock(st, g, c); if (why) toast(why); else { grantCastle(st, g, c); toast(`${g.name}に${c.name}を与えた`); cutin(st, g, 'chigyo', { castle: c.name }); } }
+    refresh(); reopen(); return;
+  }
+  if (act === 'yoriki-open') { yorikiFor = yorikiFor === +id ? null : +id; reopen(); return; }
+  if (act === 'yoriki-off') { const f = frontById(st, +id); if (f) { setFrontBoss(st, f, null); toast(`${frontName(st, f)}は与力を離れ、自らの方針で動く`); } refresh(); reopen(); return; }
+  if (act === 'yoriki-apply') {
+    const f = frontById(st, +id);
+    if (f) {
+      const on = new Set(Array.from($('modal-body').querySelectorAll<HTMLInputElement>('input[name="yoriki"]:checked'), (x) => +x.value));
+      let add = 0, del = 0;
+      for (const x of frontsOf(st)) {
+        if (x.id === f.id || x.vacant) continue;
+        if (on.has(x.id) && x.boss !== f.id) { setFrontBoss(st, x, f); add++; }
+        else if (!on.has(x.id) && x.boss === f.id) { setFrontBoss(st, x, null); del++; }
+      }
+      yorikiFor = null;
+      toast(add || del ? `${frontName(st, f)}の与力: ${add ? `${add}人を付け` : ''}${add && del ? '、' : ''}${del ? `${del}人を外した` : ''}` : '与力は変わらない');
+    }
+    refresh(); reopen(); return;
+  }
+  if (act === 'fief-remove') { const c = st.castles[+id], f = frontOfCastle(st, c); if (f) { removeCastle(st, f, c); toast(`${c.name}を召し上げた`); } refresh(); reopen(); return; }
+  if (act === 'fief-direct') { const g = st.generals[id]; if (g?.liege) { makeDirect(st, g); toast(`${g.name}を直参に引き上げた`); } refresh(); reopen(); return; }
+  if (act === 'fief-heir') { const f = frontById(st, +id), v = ($('modal-body').querySelector(`#sel-heir-${id}`) as HTMLSelectElement | null)?.value; const g = v ? st.generals[v] : undefined; if (f && g && setHeir(st, f, g)) { toast(`${g.name}に領を継がせた`); cutin(st, g, 'chigyo', { castle: st.castles[f.seat ?? f.castles[0]].name }); } refresh(); reopen(); return; }
+  if (act === 'open-fiefs') { openMenu('jinji', 'fronts'); return; }
+  if (act === 'front-off') { const f = frontById(st, +id); if (f) { if (f.vacant) dissolveFront(st, f, '（召し上げて直轄に）'); else { const n = frontName(st, f); for (const i of [...f.castles]) removeCastle(st, f, st.castles[i], true); toast(`${n}をすべて召し上げた`); } } refresh(); reopen(); return; }
   if (act === 'rw-kanjo' || act === 'rw-kazo' || act === 'rw-promote') {
     const g = st.generals[id];
     if (g) {
@@ -2330,6 +2597,43 @@ function onModalClick(e: Event) {
   if (act === 'kr-withdraw-ok') { withdraw(st); refresh(); closeModal(); showGameOver(); return; }
   if (act === 'merge-do') { const [k, o] = id.split(':').map(Number); const keep = st.armies[k], other = st.armies[o]; if (keep && other && !mergeBlock(st, keep, other)) { mergeArmies(st, keep, other); toast(`${st.generals[keep.main].name}隊に合流した`); select({ kind: 'army', id: keep.id }); } closeModal(); refresh(); return; }
   if (act === 'split-do') { const [aid, gid, f] = id.split(':'); const a = st.armies[+aid], g = st.generals[gid]; const b = a && g ? splitArmy(st, a, g, +f) : null; if (b) { toast(`${g.name}隊が分かれた`); select({ kind: 'army', id: b.id }); } closeModal(); refresh(); return; }
+  if (act === 'corps-open') { const k = +id; if (corpsOpen.has(k)) corpsOpen.delete(k); else corpsOpen.add(k); reopen(); return; }
+  if (act === 'corps-all') { corpsAll = id === '1'; reopen(); return; }
+  if (act === 'corps-fill-all') {
+    let n = 0, k = 0;
+    for (const a of clanArmies(st, st.player).filter((x) => !x.ikki && !delegatedArmy(st, x)).sort((x, y) => y.troops - x.troops)) { if (fillBlock(st, a)) continue; const got = fillArmy(st, a).length; if (got) { n += got; k++; } }
+    toast(n ? `${k}隊に${n}人を配属した` : '入れられる武将がいなかった'); refresh(); openMenu(); return;
+  }
+  if (act === 'vfilter') { if (id === 'reset') vasFilter = { role: 'all', q: '', rank: '', page: 1 }; else { vasFilter.role = id; vasFilter.page = 1; } reopen(); return; }
+  if (act === 'vmore') { vasFilter.page++; reopen(); return; }
+  if (act === 'cast-filter') { castFilter = id; reopen(); return; }
+  if (act === 'army-filter') { armyFilter = id; reopen(); return; }
+  if (act === 'tax') { setTax(st, st.player, id as Tax); toast(`年貢の率を${TAX[id as Tax].name}にした`); refresh(); reopen(); return; }
+  if (act === 'inv-bulk') {
+    const role = id as InvestRole;
+    let budget = Math.floor(st.clans[st.player].gold * +((document.getElementById('inv-budget') as HTMLSelectElement | null)?.value ?? 0.3)), n = 0, spent = 0;
+    for (let round = 0; round < 20; round++) {
+      const cs = clanCastles(st, st.player).filter((c) => !investBlock(st, st.player, c, role) && investCost(c, role) <= budget).sort((a, b) => (role === 'agri' ? a.dev - b.dev : a.cdev - b.cdev));
+      if (!cs.length) break;
+      for (const c of cs) { const k = investCost(c, role); if (k > budget) continue; if (invest(st, st.player, c, role)) { budget -= k; spent += k; n++; } }
+    }
+    toast(n ? `${n}度投じた（${fmt(spent)}貫）` : '投じられる城がなかった'); refresh(); reopen(); return;
+  }
+  if (act === 'rw-all') { rwAll = id === '1'; rwPage = 1; reopen(); return; }
+  if (act === 'rw-more') { rwPage++; reopen(); return; }
+  if (act === 'rw-bulk-kanjo' || act === 'rw-bulk-kazo' || act === 'rw-bulk-promote') {
+    const list = rewardWaiting(st);
+    let n = 0, spent = 0;
+    if (act === 'rw-bulk-kanjo') for (const g of list) { if (dueOf(g) > 0 && kanjo(st, g)) n++; }
+    if (act === 'rw-bulk-kazo') {
+      const r = +((document.getElementById('rw-budget') as HTMLSelectElement | null)?.value ?? 0.3);
+      let budget = Math.floor(st.clans[st.player].gold * r);
+      for (const g of list.filter((x) => dueOf(x) > 0)) { const c = kazoCost(g); if (c > budget) continue; if (kazo(st, g)) { n++; budget -= c; spent += c; } }
+    }
+    if (act === 'rw-bulk-promote') for (const g of list) { if (promoteOne(st, g)) n++; }
+    toast(n ? (act === 'rw-bulk-kanjo' ? `${n}人に感状を与えた` : act === 'rw-bulk-kazo' ? `${n}人に加増した（${fmt(spent)}貫）` : `${n}人を取り立てた`) : 'できる者がいなかった');
+    refresh(); reopen(); return;
+  }
   if (act === 'corps-fill') { const a = st.armies[+id]; if (a) { const n = fillArmy(st, a).length; toast(n ? `${n}人を配属した` : '入れられる武将がいなかった'); } refresh(); openMenu(); return; }
   if (act === 'ninja-do') { const tg = ninjaTargetOf(st); const r = ninjaDo(st, st.player, ninjaSel.act, tg); toast(r === 'ok' ? `${NINJA_NAME[ninjaSel.act]}は成った` : r === 'caught' ? '忍びが捕らわれた' : r === 'fail' ? `${NINJA_NAME[ninjaSel.act]}はしくじった` : 'できない'); ninjaSel.target = ''; refresh(); if (!st.over) openMenu(); return; }
   if (act === 'tea-do') { const g = st.generals[teaHost]; const gs2 = g ? teaCeremony(st, g) : []; toast(gs2.length ? `茶会で${gs2.length}人をもてなした` : '茶会を開けない'); refresh(); openMenu(); return; }

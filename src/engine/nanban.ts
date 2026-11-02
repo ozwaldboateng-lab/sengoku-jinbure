@@ -1,7 +1,8 @@
 // 南蛮貿易と布教: 南蛮船・南蛮市・大筒・宣教師・切支丹
-import { BAPTISM, MISSION_BIAS, MISSIONARIES, NANBAN_ITEMS, NANBAN_PORTS } from '../data/nanban';
+import { BAPTISM, KARA_PORTS, MISSION_BIAS, MISSIONARIES, NANBAN_ITEMS, NANBAN_PORTS } from '../data/nanban';
+import { MINES } from '../data/economy';
 import { graphDistances, NEIGHBORS } from './map';
-import { clanGuns, transferItem } from './money';
+import { castleMine, clanGuns, transferItem } from './money';
 import { capital, desert } from './ops';
 import { envoyLine } from './lines';
 import * as R from './rules';
@@ -59,14 +60,42 @@ function arrive(s: GameState) {
 
 // 月末: 来航中の船の利を港の持ち主へ、期限の来た船は去る。5月の末に新しい船が来る
 export function monthShips(s: GameState) {
+  const traded = new Set<string>();
   for (const x of s.ships ?? []) {
     const o = portOwner(s, x.port);
-    if (o && s.clans[o].alive) s.clans[o].gold += R.SHIP_TRADE;
+    if (o && s.clans[o].alive) { s.clans[o].gold += R.SHIP_TRADE; traded.add(o); }
   }
+  for (const x of s.karasen ?? []) {
+    const o = portOwner(s, x.port);
+    if (o && s.clans[o].alive) { s.clans[o].gold += R.KARASEN_TRADE; traded.add(o); }
+  }
+  // 銀で生糸を買う: 船の来ている家は銀山の産出の2割を上乗せ（月に一度）
+  for (const o of traded) s.clans[o].gold += silverTrade(s, o);
+  monthKarasen(s);
   const gone = (s.ships ?? []).filter((x) => s.turn >= x.until);
   for (const x of gone) if (portOwner(s, x.port) === s.player) addLog(s, `南蛮船が${portName(x.port)}を去った。`, 'econ', true);
   s.ships = (s.ships ?? []).filter((x) => s.turn < x.until);
   if (s.month === R.SHIP_MONTH - 1) arrive(s);
+}
+
+// ───────── 唐船（明の商人の密貿易） ─────────
+export const karaPortName = (id: string) => KARA_PORTS.find(([c]) => c === id)?.[1] ?? id;
+export const isKaraPort = (c: Castle) => KARA_PORTS.some(([id]) => id === c.id);
+export const karasenAt = (s: GameState, id: string) => (s.karasen ?? []).some((x) => x.port === id);
+// 銀の上乗せ（その家の銀山の今月の産出の2割）
+export const silverTrade = (s: GameState, clan: string) => Math.round(s.castles.filter((c) => c.owner === clan && MINES.some(([id, , k]) => id === c.id && k === 'silver')).reduce((t, c) => t + castleMine(s, c), 0) * R.SILVER_TRADE);
+function monthKarasen(s: GameState) {
+  const gone = (s.karasen ?? []).filter((x) => s.turn >= x.until);
+  for (const x of gone) if (portOwner(s, x.port) === s.player) addLog(s, `唐船が${karaPortName(x.port)}を去った。`, 'econ', true);
+  s.karasen = (s.karasen ?? []).filter((x) => s.turn < x.until);
+  if (s.karairi?.active || rand(s) >= R.KARASEN_CHANCE) return; // 唐入りのあいだは来ない
+  const cands = KARA_PORTS.filter(([id]) => !karasenAt(s, id));
+  if (!cands.length) return;
+  let r = rand(s) * cands.reduce((t, x) => t + x[2], 0);
+  const pick = cands.find((x) => (r -= x[2]) < 0) ?? cands[cands.length - 1];
+  (s.karasen ??= []).push({ port: pick[0], until: s.turn + R.KARASEN_STAY });
+  const o = portOwner(s, pick[0]);
+  addLog(s, `明の商人の唐船が${pick[1]}に入った${o ? `（${clanName(s, o)}家）` : ''}。${o === s.player ? `生糸と唐物の商いで、${R.KARASEN_STAY}か月のあいだ貿易の利が入る。` : ''}`, 'econ', o === s.player);
 }
 
 // ───────── 南蛮市 ─────────

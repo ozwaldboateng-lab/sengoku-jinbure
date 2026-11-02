@@ -54,10 +54,11 @@ export const farmTroops = (s: GameState, clan: string) => clanTroops(s, clan) - 
 // 補充・AIの編成はこの人数まで（動員上限 × 動員目標）
 export const mobilizeCap = (s: GameState, clan: string) => Math.round((clanCapacity(s, clan) * (s.clans[clan].mobilize ?? R.MOBILIZE_DEFAULT)) / 100);
 // 動員上限: 城ごとに 石高 × 治安で決まる人数
-export const clanCapacity = (s: GameState, clan: string) => Math.round(clanCastles(s, clan).reduce((t, c) => t + castleKoku(c) * R.manpowerPer(c.chian ?? R.CHIAN_START), 0));
-export const garrisonMax = (c: Castle) => Math.round((R.GARRISON_BASE + castleKoku(c) * R.GARRISON_PER_KOKU) * R.CASTLE_KIND[c.kind ?? 'hira'].garrison);
+export const clanCapacity = (s: GameState, clan: string) => Math.round(clanCastles(s, clan).reduce((t, c) => t + castleKoku(c) * R.manpowerPer(c.chian ?? R.CHIAN_START), 0) * TAX_CAP[s.clans[clan]?.tax ?? 'mid']);
+const TAX_CAP = { low: 1.1, mid: 1, high: 0.95 } as const; // 年貢の率と動員上限（invest.ts の TAX と揃える）
+export const garrisonMax = (c: Castle) => Math.round((R.GARRISON_BASE + castleKoku(c) * R.GARRISON_PER_KOKU) * R.CASTLE_KIND[c.kind ?? 'hira'].garrison * (1 + (c.fort ?? 0) * R.FORT_GARRISON));
 // 城の守りの倍率（自動決着）。詰城のある館は上乗せ
-export const castleDef = (c: Castle) => R.CASTLE_KIND[c.kind ?? 'hira'].def + (c.tsume ? R.TSUME_DEF : 0);
+export const castleDef = (c: Castle) => R.CASTLE_KIND[c.kind ?? 'hira'].def + (c.tsume ? R.TSUME_DEF : 0) + (c.fort ?? 0) * R.FORT_DEF;
 export const clanUpkeep = (s: GameState, clan: string) => Math.round(clanTroops(s, clan) * R.FOOD_PER_SOLDIER);
 
 export const gen = (s: GameState, id: string | null): General | null => (id ? s.generals[id] ?? null : null);

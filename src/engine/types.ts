@@ -40,6 +40,9 @@ export interface Castle {
   kiri?: number; // 切支丹の信者の割合（%）
   prevOwner?: string; prevTurn?: number; // 落とされる前の持ち主とそのターン（旧領の回復の名分）
   ember?: number; oldOwner?: string | null; // 残り火（旧主の残党・門徒の火種 0〜100）と、落とす前の持ち主
+  rakuichi?: number; // 楽市楽座を布いたターン
+  shinden?: { clan: string; until: number }; shindenN?: number; // 新田開発（工事中／成った回数）
+  fort?: number; fortBuild?: { clan: string; until: number }; // 普請の段（0土塁・1石垣・2櫓と堀・3天守）／普請中
   store?: number; // 城の蔵（籠城の備えの兵糧、石）。飛び地では収穫もここに入る
 }
 
@@ -64,6 +67,10 @@ export interface General {
   later?: string; // 元服後の名
   refused?: Record<string, number>; // 在野: 仕官を断られた家とそのターン
   boss?: string; // 軍団での直属の上役
+  kan?: number; // 主君の推挙で得た官位（R.COURT の段）
+  shugodai?: string; // 守護代を務める国
+  tozama?: string; // 降って本領を安堵された旧大名（元の家）。宿老の枠を使わない
+  liege?: string; // 陪臣: 仕える城持ち（領主）の武将。恩賞は領主が払い、当家は直接は使えない
   kiri?: boolean; // 洗礼を受けた
   on?: number; paid?: number; // 恩（0〜100）と、恩賞で報いた分の功績（功績−これ＝未払いの功）
   fame?: number; outer?: string; // 名声（0〜100）と、外から受けた官（'court' か家のid。別の場所へ戻れる者）
@@ -96,6 +103,7 @@ export interface Clan {
   lastWar?: number; // 最後に攻撃したターン
   wonTurn?: number; foughtTurn?: number; // 使番の功績判定用
   gold: number; guns: number; // 金（貫）と蔵の鉄砲
+  tax?: 'low' | 'mid' | 'high'; // 年貢の率
   budget: { chisui: number; hodo: number }; // 毎月の収入から治水・施しに回す割合（%）
   focus?: number | null; // 予算を優先する城
   delegate?: { budget: boolean; trade: boolean; staff: boolean; court: boolean; military?: boolean }; // 委任（プレイヤー）。military は直轄も含む全軍
@@ -118,7 +126,14 @@ export interface Item { id: string; name: string; kind: ItemKind; grade: number;
 
 // 方面軍団（プレイヤーだけ）: 軍団長に担当の城と部隊を任せ、方針に従ってAIが動かす
 export type FrontPolicy = 'attack' | 'defend' | 'build';
-export interface Front { id: number; leader: string; castles: number[]; policy: FrontPolicy; target: string | null; } // target: 'clan:<id>' か 'castle:<城の番号>'
+// 領（知行）: 城持ちの家臣（領主）に与えた城の束。方面軍団を兼ねる（方針に従ってAIが動かす）。target: 'clan:<id>' か 'castle:<城の番号>'
+export interface Front {
+  id: number; leader: string; castles: number[]; policy: FrontPolicy; target: string | null;
+  seat?: number; // 居城（城の番号）
+  gold?: number; food?: number; // 領の蔵（年貢・商いの8割が入り、領の兵の兵糧・足軽の給金・陪臣の恩賞をここから払う）
+  boss?: number; // 与力として従う寄親の領（方針と目標はこちらに従う）
+  vacant?: boolean; asked?: number; // 領主がいなくなった（後継ぎを決めるまで直轄として扱う）／後継ぎを尋ねたターン
+}
 
 export interface Ship { port: string; until: number; guns: number; cannon: number; cargo: string[]; }
 
@@ -159,6 +174,7 @@ export interface GameState {
   items: Record<string, Item>; // 名物
   offers?: { gen: string; castle: number; turn: number }[]; // プレイヤーへの仕官の願い出
   ships?: Ship[]; // 来航中の南蛮船
+  karasen?: { port: string; until: number }[]; // 来航中の唐船（明の商人の船）
   fronts?: Front[]; nextFrontId?: number; // 方面軍団
   shioki?: { castle: number; turn: number }[]; // プレイヤーが仕置を決める城（落とした翌月の評定終了まで）
   willAsked?: number; // 当主が病に倒れ、遺言を求めたターン

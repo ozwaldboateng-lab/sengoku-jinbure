@@ -20,21 +20,17 @@ await p.screenshot({ path: `${out}/390-ending${mobile ? '-m' : ''}.png` });
 const policy = process.argv[4] ?? 'allow';
 await p.evaluate((pol) => { const s = window.__sengoku.state; s.clans[s.player].mission = pol === 'none' ? undefined : pol; if (pol === 'none') s.ships = []; s.year = pol === 'allow' ? 1585 : s.year; }, policy);
 await p.click('[data-act="end-next"]'); await p.waitForTimeout(1500);
-const lines = [], chapters = new Set(); let shot = 0;
+const lines = [], choices = [], chapters = new Set(); let shot = 0;
 for (let k = 0; k < 40; k++) {
-  const st = await p.evaluate(() => ({ ch: document.querySelector('.il-head h2')?.textContent, q: document.querySelector('.il-quote .qname')?.textContent, choice: [...document.querySelectorAll('[data-act="il-choose"]')].map((b) => b.dataset.id), final: !!document.querySelector('[data-act="il-decide"]') }));
+  const st = await p.evaluate(() => ({ ch: document.querySelector('.il-head h2')?.textContent, q: document.querySelector('.il-quote .qname')?.textContent, choice: [...document.querySelectorAll('[data-act="il-choose"]')].map((b) => b.dataset.id), final: !!document.querySelector('#interlude h1') }));
   chapters.add(st.ch);
   if (st.final) break;
   if (st.q) { lines.push(`${st.ch}｜${st.q}`); if ([2, 9].includes(k)) await p.screenshot({ path: `${out}/391-interlude-${policy}-${shot++}${mobile ? '-m' : ''}.png` }); await p.click('[data-act="il-next"]'); }
-  else if (st.choice.length) { await p.screenshot({ path: `${out}/391b-choice-${k}-${policy}${mobile ? '-m' : ''}.png` }); await p.click(`[data-act="il-choose"][data-id="${st.choice.includes('yes') ? 'yes' : st.choice.includes('ban') ? 'ban' : st.choice[0]}"]`); }
+  else if (st.choice.length) { await p.screenshot({ path: `${out}/391b-choice-${k}-${policy}${mobile ? '-m' : ''}.png` }); const want = ['yes', 'ban', 'expel', 'saki', 'envoy'].find((x) => st.choice.includes(x)) ?? st.choice[0]; choices.push(`${st.ch}｜${st.choice.join('/')}→${want}`); await p.click(`[data-act="il-choose"][data-id="${want}"]`); }
   await p.waitForTimeout(100);
 }
-const opts = await p.evaluate(() => [...document.querySelectorAll('#interlude .il-opt b')].map((b) => b.textContent));
-await p.screenshot({ path: `${out}/392-choice-${policy}${mobile ? '-m' : ''}.png`, fullPage: true });
-await p.evaluate(() => { const r = document.querySelector('input[name="cause"][value="saki"]'); if (r) r.checked = true; const e = document.querySelector('input[name="nanban"][value="expel"]'); if (e) e.checked = true; });
-await p.click('[data-act="il-decide"]'); await p.waitForTimeout(300);
 const fin = await p.evaluate(() => ({ h: document.querySelector('#interlude h1')?.textContent, p: document.querySelector('#interlude .end-text p')?.textContent, k: window.__sengoku.state.karairi, mission: window.__sengoku.state.clans[window.__sengoku.state.player].mission }));
 await p.screenshot({ path: `${out}/393-finale-${policy}${mobile ? '-m' : ''}.png` });
 await p.click('[data-act="il-close"]'); await p.waitForTimeout(200);
-console.log(JSON.stringify({ shown: !!shown, chapters: [...chapters], lines, opts, fin, errors: errors.length ? errors : 'none' }, null, 1));
+console.log(JSON.stringify({ shown: !!shown, chapters: [...chapters], lines, choices, fin, errors: errors.length ? errors : 'none' }, null, 1));
 await b.close();

@@ -35,3 +35,55 @@ export const MEIBUTSU: [string, string, ItemKind, number, string | null, string 
   ['yagen', '薬研藤四郎', 'sword', 4, 'ashikaga', null],
   ['heshikiri', 'へし切長谷部', 'sword', 4, null, null],
 ];
+
+// ───────── 金山・銀山（稼ぎは知行に関わらず当家へ） ─────────
+// [城id, 名, 鉱石, 産出（貫/月）]
+export type MineKind = 'gold' | 'silver' | 'copper';
+export const MINES: [string, string, MineKind, number][] = [
+  ['yamabuki', '石見銀山', 'silver', 1200],
+  ['konosumiyama', '生野銀山', 'silver', 700],
+  ['tsutsujigasaki', '黒川金山', 'gold', 600],
+  ['matsukura', '松倉金山', 'gold', 400],
+  ['sunpu', '安倍金山', 'gold', 400],
+  ['sannohe', '鹿角の金山', 'gold', 400],
+  ['yamagata', '延沢銀山', 'silver', 400],
+  ['yanagawa', '半田銀山', 'silver', 400],
+  ['nirayama', '縄地金山', 'gold', 250],
+  ['koshimizu', '多田銀山', 'silver', 250],
+  ['takahara', '茂住・和佐保銀山', 'silver', 250],
+  ['konosumiyama', '中瀬金山', 'gold', 200],
+  ['bitchu_matsuyama', '吹屋の銅山', 'copper', 150],
+];
+export const MINE_KIND_NAME: Record<MineKind, string> = { gold: '金', silver: '銀', copper: '銅' };
+
+// ───────── 特産品 ─────────
+// 種類: com=商い（その城の商業に上乗せ・貫/月） / horse=馬（突撃の自軍の損害が減る） / powder=硫黄・煙硝（鉄砲の維持費が下がる） / iron=鉄（鉄砲の値段が下がる）
+export type ProductKind = 'com' | 'horse' | 'powder' | 'iron';
+export const PRODUCTS: [string, string, ProductKind, number][] = [
+  ['kasugayama', '青苧', 'com', 250],
+  ['nanao', '輪島塗と揚げ浜の塩', 'com', 200],
+  ['ichijodani', '越前奉書紙', 'com', 200],
+  ['toyama_c', '五箇山の煙硝', 'powder', 0],
+  ['gujo', '美濃紙', 'com', 150],
+  ['inabayama', '関の刀', 'com', 200],
+  ['narumi', '常滑焼・瀬戸物', 'com', 150],
+  ['okazaki', '三河木綿', 'com', 150],
+  ['tsutsujigasaki', '甲斐駒', 'horse', 0],
+  ['kisofukushima', '木曽馬', 'horse', 0],
+  ['sannohe', '南部馬', 'horse', 0],
+  ['kanayama', '桐生の絹', 'com', 200],
+  ['kurokawa', '会津の漆', 'com', 150],
+  ['yamagata', '最上の紅花', 'com', 200],
+  ['kyo', '宇治茶と西陣織', 'com', 300],
+  ['tsutsui', '奈良晒と南都の酒', 'com', 250],
+  ['okawachi', '丹生の水銀（伊勢白粉）', 'com', 200],
+  ['shingu', '熊野の材木', 'com', 150],
+  ['shozui', '阿波の藍', 'com', 200],
+  ['tatsuno', '赤穂の塩', 'com', 200],
+  ['tenjinyama', '備前長船の刀', 'com', 200],
+  ['gassantoda', '出雲のたたら鉄', 'iron', 0],
+  ['odaka_h', '伯耆の鉄', 'iron', 0],
+  ['sogo', '讃岐の塩', 'com', 150],
+  ['uchi', '薩摩の硫黄', 'powder', 0],
+];
+export const PRODUCT_KIND_NAME: Record<ProductKind, string> = { com: '商い', horse: '馬', powder: '硫黄・煙硝', iron: '鉄' };

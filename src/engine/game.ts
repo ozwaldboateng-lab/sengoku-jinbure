@@ -12,9 +12,11 @@ import { monthlyLife } from './life';
 import { monthlyRonin } from './ronin';
 import { monthlyNanban } from './nanban';
 import { monthlyOn } from './on';
-import { frontById, frontMerit, frontOfCastle, runFronts } from './fronts';
+import { fiefAccounts, frontById, frontMerit, frontOfCastle, runFronts } from './fronts';
 import { monthlyEmber, settleShioki } from './shioki';
 import { delegateOf } from './delegate';
+import { cleanShugodai } from './kan';
+import { monthlyWorks } from './invest';
 import { runDelegation } from './delegate';
 import { ikkiOrders } from './ikki';
 import { checkVictory } from './ops';
@@ -29,7 +31,7 @@ export async function endTurn(s: GameState) {
   // 決めずにいた仕置: 方面の城は軍団長が、軍事を委任していれば当主の気性で、ほかは撫育
   settleShioki(s, (c) => {
     const f = frontOfCastle(s, c) ?? frontById(s, Object.values(s.armies).find((a) => a.hex === c.hex && a.clan === s.player)?.front);
-    if (f) return s.generals[f.leader];
+    if (f && !f.vacant) return s.generals[f.leader];
     return delegateOf(s).military && s.clans[s.player].leader ? s.generals[s.clans[s.player].leader!] : undefined;
   });
   await runFronts(s); // 方面軍団（と軍事の委任）の出陣・移動
@@ -46,11 +48,14 @@ export async function endTurn(s: GameState) {
   for (const c of order) { if (s.over) break; await runClanAI(s, c); }
   await karairiMonth(s); // 唐入り: 李舜臣の遊撃と海戦（兵站の前に）
   monthEnd(s);
+  monthlyWorks(s); // 新田開発・城の普請の進み
+  fiefAccounts(s); // 領の蔵: 年貢・商いの8割と、領の兵の兵糧・給金・陪臣の恩賞
   monthlyEmber(s);
   monthlyRanks(s);
   monthlyOn(s);
   monthlyBushi(s);
   monthlyBakufu(s);
+  cleanShugodai(s); // 守護でなくなった国の守護代を外す
   monthlyLife(s);
   monthlyRonin(s);
   monthlyNanban(s);

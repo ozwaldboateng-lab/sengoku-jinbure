@@ -2,6 +2,7 @@
 import { shisenDip } from './bakufu';
 import { CHAJIN_GIFT, clanHas, GAIKO_DIP, gaikoIn } from './traits';
 import { initOn } from './on';
+import { enfeoffSurrendered } from './fronts';
 import { graphDistances } from './map';
 import { eliminateClan } from './ops';
 import { addLog, allied, clanArmies, clanCastles, clanName, noteClash, pairKey, rand, treatyOf } from './state';
@@ -112,12 +113,17 @@ export function sign(s: GameState, a: string, b: string, kind: 'alliance' | 'mar
 // 降伏した勢力を吸収: 城・軍団・武将・捕虜がそのまま移る
 export function absorb(s: GameState, winner: string, loser: string) {
   const L = s.clans[loser];
+  const toPlayer = winner === s.player;
+  const castles = s.castles.filter((c) => c.owner === loser).map((c) => c.i);
+  const gens = Object.values(s.generals).filter((g) => g.clan === loser && g.status !== 'dead');
+  const leaderId = L.leader;
   for (const c of s.castles) if (c.owner === loser) c.owner = winner;
   for (const a of Object.values(s.armies)) if (a.clan === loser) a.clan = winner;
   // 蔵の兵糧・金・鉄砲もそのまま移る
   const W = s.clans[winner];
   const got = { food: Math.max(0, Math.round(L.food)), gold: Math.max(0, Math.round(L.gold)), guns: Math.max(0, L.guns) };
-  W.food += got.food; W.gold += got.gold; W.guns += got.guns;
+  W.guns += got.guns;
+  if (!toPlayer) { W.food += got.food; W.gold += got.gold; }
   L.food = 0; L.gold = 0; L.guns = 0;
   for (const g of Object.values(s.generals)) {
     // 降った家の奉行・使番はいったん解く（こちらの枠で任じ直す）
@@ -129,7 +135,10 @@ export function absorb(s: GameState, winner: string, loser: string) {
   // 名物は持たせたまま移る
   for (const it of clanItems(s, loser)) { const h = it.holder; transferItem(s, it, winner); if (h) equip(s, s.generals[h], it, true); }
   addLog(s, `${L.name}家が${clanName(s, winner)}家に降った。`, 'castle', true);
-  addLog(s, `${L.name}家の蔵を接収した（兵糧${got.food.toLocaleString()}石・金${got.gold.toLocaleString()}貫・鉄砲${got.guns.toLocaleString()}丁）。`, 'econ', winner === s.player);
+  // 当家に降った家は本領安堵: 当主が城持ちに、家臣はその陪臣に、蔵の兵糧と金は領の蔵に（鉄砲は当家の蔵へ）
+  const f = toPlayer ? enfeoffSurrendered(s, loser, castles, gens, got, leaderId) : null;
+  if (toPlayer && !f) { W.food += got.food; W.gold += got.gold; }
+  addLog(s, f ? `${L.name}家の鉄砲${got.guns.toLocaleString()}丁を当家の蔵に収めた（兵糧と金は${L.name}家の領の蔵に残る）。` : `${L.name}家の蔵を接収した（兵糧${got.food.toLocaleString()}石・金${got.gold.toLocaleString()}貫・鉄砲${got.guns.toLocaleString()}丁）。`, 'econ', toPlayer);
   L.leader = null;
   eliminateClan(s, loser, winner); // 城・軍団はもう移っているので、勢力だけが消える
 }

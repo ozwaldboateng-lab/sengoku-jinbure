@@ -1,0 +1,25 @@
+// 降った家の本領安堵: 当主が城持ち（外様）に、家臣は陪臣に、蔵は領の蔵に。引き抜きで主の恩が1.5倍下がる
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { chromium } = require('/opt/node-tools/node_modules/playwright');
+const out = process.argv[2], mobile = process.argv[3] === 'mobile', sfx = mobile ? '-m' : '';
+const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const p = await b.newPage({ viewport: mobile ? { width: 390, height: 844 } : { width: 1360, height: 820 } });
+const errors = [];
+p.on('pageerror', (e) => errors.push('pageerror ' + e.message));
+await p.goto('file://' + process.cwd() + '/dist/index.html'); await p.waitForTimeout(400);
+await p.click('[data-act="t-new"]'); await p.click('[data-act="pick-scen"][data-id="1560"]'); await p.click('[data-act="pick-clan"][data-id="oda"]');
+await p.click('[data-act="start"]'); await p.waitForTimeout(300);
+for (let k = 0; k < 4; k++) if (await p.$('#modal:not([hidden])')) await p.click('#modal-close').catch(() => {});
+const before = await p.evaluate(() => { const s = window.__sengoku.state; return { gold: Math.round(s.clans.oda.gold), saitoGold: Math.round(s.clans.saito.gold), saitoFood: Math.round(s.clans.saito.food) }; });
+await p.evaluate(() => window.__sengoku.surrender('saito'));
+const st = await p.evaluate(() => { const s = window.__sengoku.state; const f = s.fronts[0]; const L = f && s.generals[f.leader]; return { lord: L?.name, tozama: L?.tozama, on: Math.round(L?.on ?? 0), castles: f?.castles.length, gold: f?.gold, food: f?.food, baishin: Object.values(s.generals).filter((g) => g.liege === f?.leader).length, odaGold: Math.round(s.clans.oda.gold) }; });
+await p.keyboard.press('3'); await p.click('[data-act="stab"][data-id="fronts"]'); await p.waitForTimeout(150);
+const card = await p.evaluate(() => document.querySelector('.front-card .sub')?.textContent);
+const pullLabel = await p.evaluate(() => document.querySelector('[data-act="fief-direct"]')?.textContent);
+await p.screenshot({ path: `${out}/460-tozama${sfx}.png`, fullPage: true });
+await p.click('[data-act="fief-direct"]'); await p.waitForTimeout(150);
+const after = await p.evaluate(() => { const s = window.__sengoku.state; const f = s.fronts[0]; return { on: Math.round(s.generals[f.leader].on), baishin: Object.values(s.generals).filter((g) => g.liege === f.leader).length }; });
+const sw = await p.evaluate(() => document.documentElement.scrollWidth);
+console.log(JSON.stringify({ before, st, card, pullLabel, after, sw, errors: errors.length ? errors : 'none' }, null, 1));
+await b.close();

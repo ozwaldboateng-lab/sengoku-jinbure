@@ -5,6 +5,7 @@ import { TRAITS } from '../data/traits';
 import { SO_EMBER } from './traits';
 import { MONTO_CASTLE } from './rules';
 import * as R from './rules';
+import { taxDef } from './invest';
 import { captureCastle, checkVictory, eliminateClan, nearestOwnCastle } from './ops';
 import { addLog, castleKoku, clanCastles, clanName, garrisonMax, hostile, rand } from './state';
 import type { Castle, GameState, General } from './types';
@@ -64,7 +65,7 @@ export function monthlyEmber(s: GameState) {
   for (const c of s.castles) {
     if (!c.ember || !c.owner) continue;
     const gov = c.governor ? s.generals[c.governor] : null;
-    c.ember = Math.max(0, c.ember - R.emberDecay(c.chian, gov?.cha ?? 40) * (gov && TRAITS[gov.id] === 'so' ? SO_EMBER : 1)); // 僧の城主なら倍の速さで鎮まる
+    c.ember = Math.max(0, c.ember - R.emberDecay(c.chian, gov?.cha ?? 40) * (gov && TRAITS[gov.id] === 'so' ? SO_EMBER : 1) * taxDef(s, c.owner).ember); // 僧の城主なら倍の速さで鎮まる。年貢が軽いと早く鎮まる
     if (c.chian >= R.EMBER_FLARE_CHIAN || rand(s) >= R.emberFlare(c.ember)) continue;
     const size = R.flareSize(c.ember, castleKoku(c));
     const old = c.oldOwner && s.clans[c.oldOwner]?.alive && hostile(s, c.owner, c.oldOwner) ? c.oldOwner : null;

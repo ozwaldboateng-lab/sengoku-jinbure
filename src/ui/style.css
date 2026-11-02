@@ -567,3 +567,18 @@ button.off, button[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
 .split-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--hair); }
 .split-row .grow { flex: 1; min-width: 160px; }
 .pill.trait { background: rgba(207,169,94,0.18); border-color: var(--gold); color: var(--gold); }
+/* 地方ごとにたたむ一覧 */
+details.reg { border: 1px solid var(--hair); border-radius: 4px; margin: 6px 0; background: rgba(255,255,255,0.015); }
+details.reg > summary { cursor: pointer; padding: 9px 12px; list-style: none; color: var(--paper); font-size: 14px; }
+details.reg > summary::-webkit-details-marker { display: none; }
+details.reg > summary::before { content: '▸'; color: var(--gold); display: inline-block; width: 1.2em; transition: transform .15s; }
+details.reg[open] > summary::before { transform: rotate(90deg); }
+details.reg > summary .warn { color: #e0a060; }
+details.reg > summary .good { color: #9cc58a; }
+details.reg > .tbl-wrap { margin: 0 8px 8px; }
+/* 与力を選ぶ一覧（寄親の札の中） */
+.yoriki-list { display: grid; gap: 6px; margin: 8px 0; }
+.yoriki-list .il-opt { text-align: left; }
+.yoriki-list .il-opt span { font-size: 12.5px; color: var(--paper-dim); }
+.yoriki-list .warn { color: #e0a060; }
+@media (min-width: 900px) { .yoriki-list { grid-template-columns: 1fr 1fr; } }

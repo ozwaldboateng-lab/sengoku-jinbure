@@ -1,5 +1,7 @@
 // 治水・治安と、その予算（家単位。城への配分は自動）
 import { frontChianOf } from './fronts';
+import { shugodaiChian } from './kan';
+import { taxDef } from './invest';
 import * as R from './rules';
 import { clanCapacity, clanCastles, farmTroops } from './state';
 import type { Castle, Clan, GameState } from './types';
@@ -12,7 +14,12 @@ export function chianDelta(s: GameState, clan: Clan, c: Castle, sieged: boolean,
   if (sieged) parts.push(['包囲', R.CHIAN_SIEGE]);
   if (starving) parts.push(['兵糧切れ', R.CHIAN_STARVE]);
   const fc = frontChianOf(s, c);
-  if (fc > 0) parts.push(['軍団長の魅力', Math.round(fc * 10) / 10]);
+  if (fc > 0) parts.push(['領主の魅力', Math.round(fc * 10) / 10]);
+  const tx = taxDef(s, c.owner);
+  if (tx.chian) parts.push([tx.chian > 0 ? '年貢が軽い' : '年貢が重い', tx.chian]);
+  if (c.rakuichi !== undefined && s.turn - c.rakuichi < R.RAKUICHI_MONTHS) parts.push(['楽市楽座への反発', R.RAKUICHI_CHIAN]);
+  const sd = shugodaiChian(s, c);
+  if (sd > 0) parts.push(['守護代', sd]);
   if (clan.mission === 'allow' && (c.kiri ?? 0) >= 2) parts.push(['寺社の反発', -Math.round((c.kiri ?? 0) * R.KIRI_CHIAN * 10) / 10]);
   if (clan.mission === 'ban' && (c.kiri ?? 0) > 5) parts.push(['禁教', R.BAN_CHIAN]);
   const m = mobilizeDrop(s, clan.id);

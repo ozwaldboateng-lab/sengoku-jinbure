@@ -59,7 +59,7 @@ export function onGift(g: General, grade: number) { g.paid = Math.min(g.merit, (
 // AI（と人事を委任したプレイヤー）: 未払いが溜まった者から、金があれば加増、なければ感状
 function aiReward(s: GameState, clan: string) {
   const C = s.clans[clan], reserve = R.PLOT_GOLD * 2 + 2000;
-  for (const g of vassalsOf(s, clan).filter((x) => dueOf(x) >= R.ON_DUE_FREE + 10).sort((a, b) => onOf(a) - onOf(b))) {
+  for (const g of vassalsOf(s, clan).filter((x) => !x.liege && dueOf(x) >= R.ON_DUE_FREE + 10).sort((a, b) => onOf(a) - onOf(b))) {
     if (C.gold - kazoCost(g) > reserve && (onOf(g) < 50 || dueOf(g) >= 60)) kazo(s, g); else kanjo(s, g);
   }
 }
@@ -89,6 +89,7 @@ function consequences(s: GameState, C: Clan) {
   const mine = C.id === s.player;
   // 方面軍団の謀反（プレイヤー）
   if (mine) for (const f of [...(s.fronts ?? [])]) {
+    if (f.vacant) continue;
     const g = s.generals[f.leader];
     const on = g ? onOf(g) - (g.outer ? R.OUTER_SHIFT : 0) : 100;
     if (g && on < R.ON_REBEL && rand(s) < R.onRebelChance(on)) { rebelFront(s, f); if (!C.alive) return; }
@@ -148,6 +149,9 @@ export function splitClan(s: GameState, g: General, from: string, castles: numbe
     if (c.governor) join(s.generals[c.governor]);
     for (const x of Object.values(s.generals)) if (x.clan === from && x.status === 'free' && x.loc === i) join(x);
   }
+  // 陪臣は主について行く
+  for (const x of Object.values(s.generals)) if (x.liege === g.id && x.clan === from && x.status !== 'captive') { if (x.status === 'army' && x.army !== null && !armies.some((a) => a.id === x.army)) continue; if (x.status !== 'army') { for (const c of s.castles) if (c.governor === x.id && c.owner !== id) c.governor = null; x.status = 'free'; const h = clanCastles(s, id)[0]; if (h) x.loc = h.i; } join(x); }
+  for (const x of Object.values(s.generals)) if (x.clan === id) x.liege = undefined;
   // 縁のある者（恩の薄い者）がついて来る
   const home = clanCastles(s, id)[0];
   if (home) for (const f of followers(s, g, from, 60)) { f.clan = id; f.status = 'free'; f.loc = home.i; f.on = R.ON_NEW + 15; f.paid = f.merit; for (const c of s.castles) if (c.governor === f.id) c.governor = null; }

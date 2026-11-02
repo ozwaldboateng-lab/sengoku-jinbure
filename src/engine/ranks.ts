@@ -30,11 +30,12 @@ export function tsukaiOf(s: GameState, clan: string): General[] {
 }
 export const tsukaiSlots = (s: GameState, clan: string) => R.tsukaiSlots(clanKoku(s, clan));
 export const karoSlots = (s: GameState, clan: string) => R.karoSlots(clanKoku(s, clan));
-const karoCount = (s: GameState, clan: string) => Object.values(s.generals).filter((g) => g.clan === clan && g.rank === 0 && !g.kin && !isLeader(s, g) && isActive(g)).length;
+const karoCount = (s: GameState, clan: string) => Object.values(s.generals).filter((g) => g.clan === clan && g.rank === 0 && !g.kin && !g.tozama && !isLeader(s, g) && isActive(g)).length;
 
 export function canTsukai(s: GameState, g: General): string | null {
   if (!g.clan || g.status !== 'free') return '待機中の武将だけ';
   if (isLeader(s, g)) return '当主は就けない';
+  if (g.liege) return '陪臣は当家の役目に就けない';
   if (g.rank < R.TSUKAI_MAX_RANK) return '足軽大将・足軽組頭だけ';
   if (tsukaiOf(s, g.clan).length >= tsukaiSlots(s, g.clan)) return '枠がない';
   return null;
@@ -61,6 +62,7 @@ export function bugyoCoef(s: GameState, clan: string, role: 'agri' | 'com' | 'hy
 export function canBugyo(s: GameState, g: General): string | null {
   if (!g.clan || g.status !== 'free') return '待機中の武将だけ';
   if (isLeader(s, g)) return '当主は就けない';
+  if (g.liege) return '陪臣は当家の役目に就けない';
   if (bugyoOf(s, g.clan).length >= bugyoSlots(s, g.clan)) return '枠がない';
   return null;
 }
@@ -137,7 +139,7 @@ export function promoteOne(s: GameState, g: General): boolean {
 function promote(s: GameState, clan: string) {
   if (clan === s.player && !delegateOf(s).staff) return;
   const label = tsukaiLabel(clan);
-  const gens = Object.values(s.generals).filter((g) => g.clan === clan && isActive(g) && !isLeader(s, g)).sort((a, b) => b.merit - a.merit);
+  const gens = Object.values(s.generals).filter((g) => g.clan === clan && isActive(g) && !isLeader(s, g) && !g.liege).sort((a, b) => b.merit - a.merit);
   for (const g of gens) {
     const from = g.rank;
     while (g.rank > 0 && g.merit >= R.MERIT_AT[g.rank - 1]) {

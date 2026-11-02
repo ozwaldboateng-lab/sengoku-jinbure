@@ -9,6 +9,13 @@ export const NANBAN_PORTS: [string, string, number, number][] = [
   ['sanjo', '長崎', 1570, 1.2],
 ];
 
+// 唐船（明の商人の船。明は海禁で公の貿易を禁じていたため密貿易）の入る港: [城id, 港の名, 来航しやすさ]
+export const KARA_PORTS: [string, string, number][] = [
+  ['hirado', '平戸', 1.2],
+  ['uchi', '坊津', 1],
+  ['tachibana', '博多', 0.8],
+];
+
 // 宣教師: [id, 名, 種別（顔画像の生成用・空）, 来日の年, 離日・没の年, 最初に入る城, 紹介]
 export const MISSIONARIES: [string, string, string, number, number, string, string][] = [
   ['torres', 'トーレス', '', 1549, 1570, 'funai', 'イエズス会の司祭。ザビエルとともに来日し、その後を継いで日本の布教を率いる。山口・豊後を拠点に信徒を育てた。'],

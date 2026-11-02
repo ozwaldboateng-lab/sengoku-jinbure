@@ -16,13 +16,13 @@ for (let k = 0; k < 60 && !(await p.$('#ending:not([hidden])')); k++) await p.wa
 await p.waitForTimeout(1200);
 await p.click('[data-act="end-next"]'); await p.waitForTimeout(1200);
 for (let k = 0; k < 40; k++) {
-  if (await p.$('[data-act="il-decide"]')) break;
+  if (await p.$('[data-act="il-start"]')) break;
   if (await p.$('[data-act="il-next"]')) await p.click('[data-act="il-next"]');
+  else if (await p.$('[data-act="il-choose"][data-id="now"]')) await p.click('[data-act="il-choose"][data-id="now"]');
   else if (await p.$('[data-act="il-choose"]')) await p.click('[data-act="il-choose"] >> nth=0');
   await p.waitForTimeout(80);
 }
-await p.evaluate(() => { const r = document.querySelector('input[name="first"][value="now"]'); if (r) r.checked = true; });
-await p.click('[data-act="il-decide"]'); await p.waitForTimeout(300);
+await p.waitForTimeout(200);
 await p.click('[data-act="il-start"]'); await p.waitForTimeout(400);
 
 await p.click('#modal-close').catch(() => {});

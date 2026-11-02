@@ -155,6 +155,24 @@ export const START_GOLD_MONTHS = 4; // 開始時の金 = 月収の6か月分
 export const GUN_PRICE = 12; // 1丁（貫）
 export const GUN_PRICE_SOURCE = 8; // 産地を持っていれば
 export const GUN_UPKEEP = 0.2; // 1丁あたり月（貫）
+// 鉱山・特産品・楽市楽座
+export const mineChian = (chian: number) => Math.min(1, 0.5 + chian / 100); // 治安が低いと産出が減る（治安0で半分、50以上で満額）
+export const HORSE_CHARGE_SELF = 1.05; // 馬の産地を持てば、突撃の自軍の損害の倍率が1.15→1.05
+export const POWDER_UPKEEP = 0.8; // 硫黄・煙硝の産地を持てば鉄砲・大筒の維持費が8割
+export const IRON_GUN = 0.85; // 鉄の産地を持てば鉄砲の値段が85%
+// 内政への追加投資・新田開発・城の普請
+export const INVEST_STEP = 0.05; // 一度の投資で開発度・商業の開発度が+5%
+export const INVEST_AGRI = 120; // 開発: 基本石高1万石あたり（貫）
+export const INVEST_COM = 1.5; // 商業: 基本の商業値1貫あたり（貫）
+export const SHINDEN_PER = 800; export const SHINDEN_RISE = 1.5; // 新田開発: 基本石高1万石あたり800貫、回を重ねるごとに1.5倍
+export const SHINDEN_MONTHS = 12; export const SHINDEN_GAIN = 0.08; export const SHINDEN_MAX = 3; // 12か月で基本石高+8%、一つの城で3度まで
+export const FORT_COST = [0, 4000, 10000, 25000]; // 普請（石垣・櫓と堀・天守）。城の石高で増減（×(0.6＋石高÷25)）
+export const FORT_MONTHS = [0, 6, 9, 12]; // 築城の城主なら半分
+export const FORT_DEF = 0.12; export const FORT_GARRISON = 0.12; export const FORT_GATE = 0.2; // 一段ごとの守り・城兵の上限・城門の固さ
+export const TENSHU_PRESTIGE = 3;
+export const RAKUICHI_GROW = 1.5; // 楽市楽座: 商業の開発の伸び×1.5
+export const RAKUICHI_CAP = 0.2; // 商業の開発の上限+20%
+export const RAKUICHI_CHIAN = -1; export const RAKUICHI_MONTHS = 12; // 布いてから12か月は、座を持つ寺社・商人の反発で治安が毎月−1
 export const GUN_SHARE = 0.4; // 部隊の兵のうち鉄砲を持てる割合
 export const GUN_MIN_UNIT = 100; // これ以上で合戦に鉄砲隊が出る
 export const GUN_AUTO_ATK = 2.2; // 自動決着での鉄砲兵の攻撃力
@@ -172,6 +190,10 @@ export const SHIP_MONTH = 6;
 export const SHIP_STAY = 5; // か月
 export const SHIP_EXTRA = 0.5; // 2隻目が来る確率
 export const SHIP_TRADE = 1500; // 来航中の港の持ち主に入る貿易の利（貫/月）
+export const SILVER_TRADE = 0.2; // 南蛮船・唐船が来ている家は、銀山の産出の2割を貿易の利に上乗せ（日本の銀で生糸を買う）
+export const KARASEN_CHANCE = 0.35; // 唐船が来る月ごとの確率
+export const KARASEN_STAY = 3; // か月
+export const KARASEN_TRADE = 700; // 来航中の港の持ち主に入る貿易の利（貫/月）
 export const SHIP_GUNS = 600; // 1隻が積んでくる鉄砲（丁）
 export const SHIP_CANNON = 2; // 1隻が積んでくる大筒（門）
 export const SHIP_ITEMS = 2; // 1隻が積んでくる南蛮の名物（まで）
@@ -342,6 +364,22 @@ export const frontNoise = (int: number) => Math.max(0.02, (100 - int) / 400); //
 export const FRONT_REACH = 6; // 攻略で狙う城は担当の城からこのヘックス以内（目標の家を決めれば+4）
 export const FRONT_MERIT = 10; // 方面が戦った月の軍団長の功績
 export const FRONT_POLICY_NAME = { attack: '攻略', defend: '防衛', build: '軍備増強' } as const;
+// 領（知行）
+export const FIEF_CAP = [Infinity, 3, 1, 0]; // 身分ごとに持てる城の数（宿老・侍大将・足軽大将・足軽組頭）
+export const FIEF_TRIBUTE = 0.2; // 領の年貢・商いのうち当家へ上納する割合
+export const FIEF_PAY = 12; // 城を与えたとき、その石高1万石ごとに報いる功
+export const fiefOn = (koku: number) => Math.min(25, 8 + koku * 1.5); // 城を与えた（召し上げた）ときの恩の上げ下げ
+export const FIEF_PULL_ON = [12, 8, 5, 3];
+// 家臣の官位（推挙）と守護代
+export const KAN_RATE = 0.3; // 推挙の献金は、その官位の献金の3割
+export const KAN_VASSAL_MAX = 5; // 家臣に推挙できるのは大納言まで（当家の官位より下）
+export const kanOn = (k: number) => 6 + k * 2; // 推挙で上がる恩
+export const kanFame = (k: number) => 4 + k * 2; // 推挙で上がる名声
+export const SHUGODAI_ON = 8; export const SHUGODAI_OFF = 4; // 守護代に任じた・解いたときの恩
+export const SHUGODAI_CHIAN = 0.5; // 守護代のいる国の当家の城の、毎月の治安
+export const TOZAMA_PULL = 1.5; // 外様（降った旧大名）の家臣を引き抜いたときは1.5倍 // 陪臣を直参に引き上げたときの領主の恩の下がり（引き上げた者の身分ごと）
+export const fiefGoldCap = (koku: number) => 1500 + koku * 150; // 領の蔵の金がこれを超えた分は、領の城の開発に回る
+export const FIEF_DEV_PER_GOLD = 0.00002; // 余った金1貫あたりの開発度の伸び
 
 // 御恩と奉公: 武将ごとの「恩」（0〜100）。功を立てても報われなければ下がり、報いれば上がる
 export const ON_START = 60; // 開始時（一門は+15）
