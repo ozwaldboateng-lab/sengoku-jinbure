@@ -19,6 +19,8 @@ import type { Army, BattleReport, BigEvent, Castle, Front, GameState, General, I
 import { openingOn, openTitleScreen, setOpeningOn, titleOpen } from './title';
 import { mood, renderPreview, setSound, sfx, soundSettings, wireSound, type Mood } from './sound';
 import { playScene } from './scene';
+import { ANECDOTES, STAT_NAME } from '../data/anecdotes';
+import { fillNames, fireAnecdote } from '../engine/anecdote';
 import { temperOf } from '../engine/lines';
 import type { OpeningBeat } from '../data/openings';
 import { armySupply, carryOf, castleSupply, cutOff, hyoroBugyo, initStores, isPort as isCoast, storeMax, storeOf, supplyRange } from '../engine/supply';
@@ -233,6 +235,8 @@ export function boot(saved?: { state?: GameState }) {
     kill: (id: string) => { if (s) { killGeneral(s, s.generals[id], 'テスト'); refresh(); } }, // テスト用: 武将を討ち死にさせる
     rebel: (fid: number) => { if (s) { const f = frontById(s, fid); if (f) rebelFront(s, f); refresh(); } }, // テスト用: 領の謀反
     capture: (cid: string) => { if (s) { const c = s.castles.find((x) => x.id === cid); if (c) captureCastle(s, c, s.player); refresh(); } }, // テスト用: 城を落としたことにする
+    anecdoteIds: () => ANECDOTES.map((a) => a.id), anecdoteWho: (id: string) => ANECDOTES.find((a) => a.id === id)?.who ?? [],
+    anecdote: (id: string) => { const a = ANECDOTES.find((x) => x.id === id); if (s && a) fireAnecdote(s, a); }, // テスト用: 逸話を起こす
     playEvents: () => new Promise<void>((res) => { if (s) playEvents(s, res); else res(); }), // テスト用: たまった出来事の場面を流す
     surrender: (loser: string) => { if (s) { absorbClan(s, s.player, loser); refresh(); } }, // テスト用: 降伏勧告が通ったことにする
     supply: (id: number) => (s && s.armies[id] ? armySupply(s, s.armies[id]) : null), neighbors: (h: number) => NEIGHBORS[h],
@@ -442,7 +446,7 @@ function renderPanel() {
 
 // 顔画像（あれば）。size: 表示幅（高さは4:5）
 function face(id: string | null | undefined, w: number, cls = 'face') {
-  const src = id ? PORTRAITS[id] : undefined;
+  const src = id ? PORTRAITS[id] ?? (id.startsWith('gihei_') ? PORTRAITS[`gihei_face_${1 + ([...id].reduce((a, c) => a + c.charCodeAt(0), 0) % 3)}`] : undefined) : undefined; // 名のない義兵は共通の顔（3人から）
   return src ? `<img class="${cls}" src="${src}" width="${w}" height="${Math.round(w * 1.25)}" alt="" loading="lazy">` : '';
 }
 // 顔があれば顔、なければ家紋風の丸
@@ -1085,6 +1089,16 @@ function eventBeats(st: GameState, e: BigEvent): { title: string; mood: Mood; be
     if (lord) beats.push({ who: lord.id, name: lord.name, label: `${C.name}家の当主`, text: '公方様の御為に。……天下は、ここから動き出す。', ...base });
     beats.push({ head: '公方を奉じる', text: '擁立した将軍は、当家の願う御内書を出しやすい。だが当家が大きくなりすぎれば、手を切って諸家に討伐を命じることもある。', ...base });
     return { title: '将軍擁立', mood: 'triumph', beats };
+  }
+  if (e.kind === 'anecdote') {
+    const a = ANECDOTES.find((x) => x.id === e.id)!, main = st.generals[a.who[0]];
+    const loc = st.castles[main.loc], base = { at: loc?.id, zoom: 1.5, light: main.clan ? [main.clan] : [], mark: loc ? [loc.id] : [] };
+    const clanOf = (id: string) => { const c = st.generals[id]?.clan; return c && st.clans[c] ? `${st.clans[c].name}家` : '在野'; };
+    const beats: OpeningBeat[] = a.beats.map((b) => b.who ? { ...b, ...base, name: st.generals[b.who]?.name ?? '', label: b.label || clanOf(b.who), text: fillNames(st, b.text) } : { ...b, ...base, head: b.head && fillNames(st, b.head), text: fillNames(st, b.text) });
+    const gains = new Map<string, string[]>();
+    for (const [id, k, n] of a.gain) gains.set(id, [...(gains.get(id) ?? []), `${STAT_NAME[k]}+${n}`]);
+    beats.push({ head: '逸話', text: `${[...gains].map(([id, xs]) => `${st.generals[id]?.name ?? ''}（${clanOf(id)}）: ${xs.join('・')}`).join('、')}`, ...base });
+    return { title: `逸話 ― ${a.title}`, mood: 'peace', beats };
   }
   if (e.kind === 'tenshu') {
     const c = st.castles.find((x) => x.id === e.castle)!, gv = c.governor ? st.generals[c.governor] : undefined, base = { at: c.id, zoom: 1.9, light: [P], mark: [c.id] };

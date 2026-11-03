@@ -11,4 +11,7 @@ export const OPENING_PEOPLE: [string, string, string, number][] = [
   ['hime_3', '姫三', '', 0],
   ['ikki_toryo', '一向一揆の旗頭', '', 0],
   ['daiku_toryo', '大工の棟梁', '', 0],
+  ['gihei_face_1', '義兵一', '', 0],
+  ['gihei_face_2', '義兵二', '', 0],
+  ['gihei_face_3', '義兵三', '', 0],
 ];

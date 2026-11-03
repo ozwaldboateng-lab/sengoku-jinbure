@@ -17,6 +17,7 @@ import { monthlyEmber, settleShioki } from './shioki';
 import { delegateOf } from './delegate';
 import { cleanShugodai } from './kan';
 import { monthlyWorks } from './invest';
+import { monthlyAnecdotes } from './anecdote';
 import { runDelegation } from './delegate';
 import { ikkiOrders } from './ikki';
 import { checkVictory } from './ops';
@@ -61,6 +62,7 @@ export async function endTurn(s: GameState) {
   monthlyRonin(s);
   monthlyNanban(s);
   expireTreaties(s);
+  monthlyAnecdotes(s); // 逸話
   s.month++;
   if (s.month > 12) { s.month = 1; s.year++; }
   s.turn++;

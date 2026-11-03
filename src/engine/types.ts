@@ -183,6 +183,7 @@ export interface GameState {
   kanOffer?: { gen: string; from: string; turn: number } | null; // 家臣に外から官の誘い（許すか咎めるか）
   returnOffer?: { gen: string; turn: number } | null; // 追放した者が勝手に戦に加わって帰参を願う
   quarrel?: { gen: string; victim: string; killed: boolean; turn: number } | null; // 家臣の喧嘩の裁き
+  anecdotes?: string[]; // 起きた逸話
   events?: BigEvent[]; // 月の終わりに場面で見せる大きな出来事（家督相続・滅亡・降伏・謀反）。評定終了ごとに空にする
   scenes?: import('./lines').SceneLine[]; // 月の報告に出す顔見せ（評定終了ごとに空にする）
   missions?: Record<string, { home: string | null; next: number }>; // 宣教師: 身を寄せる家と次に動くターン
@@ -201,4 +202,5 @@ export type BigEvent =
   | { kind: 'mission'; mis: string }
   | { kind: 'kan'; rank: number }
   | { kind: 'sponsor'; gen: string }
-  | { kind: 'tenshu'; castle: string };
+  | { kind: 'tenshu'; castle: string }
+  | { kind: 'anecdote'; id: string }; // 逸話（どの家の話でも）
