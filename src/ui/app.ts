@@ -1067,6 +1067,36 @@ function eventBeats(st: GameState, e: BigEvent): { title: string; mood: Mood; be
       { head: '許すか、禁じるか', text: '布教を許せば南蛮船が来やすくなるが、寺社は反発する。返事は今月の要件で。', ...base },
     ] };
   }
+  if (e.kind === 'kan') {
+    const r = e.rank, nm = R.COURT[r].name, high = r >= R.KAMPAKU, base = { at: 'kyo', zoom: 1.6, light: [P], mark: ['kyo'] };
+    const head = r === R.SHOGUN ? '征夷大将軍' : r === R.KAMPAKU ? '関白' : r >= 5 ? '大臣の列' : '公卿に列す';
+    const kuge = personaActive('konoe_sakihisa', st.year) ? 'konoe_sakihisa' : ['kajuji_haretoyo', 'kajuji_harumigi', 'yamashina_tokitsugu'].find((id) => personaActive(id, st.year));
+    const beats: OpeningBeat[] = [{ head, text: `勅使が京から下り、${C.name}家の当主${lord?.name ?? ''}を${nm}に任ずる宣旨を伝えた。`, ...base, sound: 'clap' }];
+    beats.push({ who: 'misu', name: '御簾の内より', label: '帝', text: r === R.SHOGUN ? `${nm}に任ずる。武家の棟梁として、天下の静謐を守れ。` : r === R.KAMPAKU ? `${nm}に任ずる。天下の政を、そなたに託す。` : `${nm}に任ずる。いよいよ朝廷のために励め。`, ...base });
+    if (kuge) beats.push({ who: kuge, name: PERSONAS[kuge].name, label: PERSONAS[kuge].title, text: r === R.SHOGUN ? '将軍の宣下、まことにめでたい。これよりは天下の武家の棟梁にござる。' : r === R.KAMPAKU ? '武家にして関白とは、前代未聞。されど、時がそれを求めておるのでしょう。' : '公卿の列に加わられたこと、まことにめでたい。', ...base });
+    if (lord) beats.push({ who: lord.id, name: lord.name, label: `${C.name}家の当主`, text: high ? '謹んでお受けいたす。この国の乱れ、必ず鎮めてみせよう。' : 'ありがたき幸せ。いよいよ励みまする。', ...base });
+    beats.push({ head: '任官', text: `威信+${R.COURT[r].pres}、攻められにくさ${Math.round(R.COURT[r].deter * 100)}%。${r === R.SHOGUN ? '将軍として、自ら御内書を下し、職を与えられる。' : r === R.KAMPAKU ? '関白は天下に一人。' : ''}`, ...base });
+    return { title: `${nm}への任官`, mood: 'triumph', beats };
+  }
+  if (e.kind === 'sponsor') {
+    const sg = gen(e.gen)!, base = { at: 'kyo', zoom: 1.7, light: [P, 'ashikaga'], mark: ['kyo'] };
+    const beats: OpeningBeat[] = [{ head: '将軍擁立', text: `${C.name}家は${sg.name}を奉じて京に入り、足利の将軍家を再び立てた。`, ...base, arrow: capId ? [[capId, 'kyo']] : [], sound: 'horn' }];
+    beats.push({ who: sg.id, name: sg.name, label: '将軍', text: 'そなたの忠義、決して忘れぬ。共に天下を正そうぞ。', ...base });
+    if (lord) beats.push({ who: lord.id, name: lord.name, label: `${C.name}家の当主`, text: '公方様の御為に。……天下は、ここから動き出す。', ...base });
+    beats.push({ head: '公方を奉じる', text: '擁立した将軍は、当家の願う御内書を出しやすい。だが当家が大きくなりすぎれば、手を切って諸家に討伐を命じることもある。', ...base });
+    return { title: '将軍擁立', mood: 'triumph', beats };
+  }
+  if (e.kind === 'tenshu') {
+    const c = st.castles.find((x) => x.id === e.castle)!, gv = c.governor ? st.generals[c.governor] : undefined, base = { at: c.id, zoom: 1.9, light: [P], mark: [c.id] };
+    const beats: OpeningBeat[] = [
+      { head: '天守、成る', text: `${c.name}に、幾重にも屋根を重ねた天守がそびえ立った。城下の者は皆、見上げて息をのんだ。`, ...base, sound: 'win' },
+      { who: 'daiku_toryo', name: '大工の棟梁', label: '普請', text: '長い普請、ようやく成りました。この天守、百年は保ちましょう。', ...base },
+    ];
+    if (gv && gv.id !== lord?.id) beats.push({ who: gv.id, name: gv.name, label: `${c.name}の城主`, text: 'これほどの城、敵も攻めあぐねましょう。', ...base });
+    if (lord) beats.push({ who: lord.id, name: lord.name, label: `${C.name}家の当主`, text: '見事じゃ。この天守が、当家の威光を天下に示す。', ...base });
+    beats.push({ head: '天守', text: `威信+${R.TENSHU_PRESTIGE}。${c.name}の守り・城兵・城門は、土塁のころよりずっと固くなった。`, ...base });
+    return { title: `${c.name}の天守`, mood: 'triumph', beats };
+  }
   const reb = gen(e.leader)!, at = e.seat ?? capId, base = { at, zoom: 1.6, light: e.clan ? [e.clan, P] : [P], mark: at ? [at] : [] };
   const odoso = e.why === 'odoso', heir = gen(e.heir);
   const beats: OpeningBeat[] = [
@@ -2148,7 +2178,7 @@ const TABS: Record<string, (st: GameState) => string> = {
       <div class="actions"><button class="act" data-act="cutin-toggle" aria-pressed="${cutinOn()}">顔見せ（返事や節目のセリフ）: ${cutinOn() ? '出す' : '出さない'}</button></div>
       ${(() => { const so = soundSettings(); return `<div class="actions" style="align-items:center;gap:10px;flex-wrap:wrap"><button class="act" data-act="snd-music" aria-pressed="${so.music}">音楽: ${so.music ? '出す' : '出さない'}</button><label class="hint" style="margin:0;display:flex;align-items:center;gap:6px">音量<input type="range" min="0" max="100" value="${Math.round(so.vm * 100)}" data-vol="vm" aria-label="音楽の音量"></label></div>
       <div class="actions" style="align-items:center;gap:10px;flex-wrap:wrap"><button class="act" data-act="snd-sfx" aria-pressed="${so.sfx}">効果音: ${so.sfx ? '出す' : '出さない'}</button><label class="hint" style="margin:0;display:flex;align-items:center;gap:6px">音量<input type="range" min="0" max="100" value="${Math.round(so.vs * 100)}" data-vol="vs" aria-label="効果音の音量"></label></div>`; })()}
-      <div class="actions"><button class="act" data-act="events-toggle" aria-pressed="${eventsOn()}">大きな出来事の場面（家督相続・滅亡・降伏・謀反）: ${eventsOn() ? '出す' : '出さない'}</button></div>
+      <div class="actions"><button class="act" data-act="events-toggle" aria-pressed="${eventsOn()}">大きな出来事の場面（家督相続・滅亡・降伏・謀反・一揆・同盟と婚姻・南蛮・任官・天守など）: ${eventsOn() ? '出す' : '出さない'}</button></div>
       <div class="actions"><button class="act" data-act="opening-toggle" aria-pressed="${openingOn()}">序幕（始める前の時代の紹介）: ${openingOn() ? '出す' : '出さない'}</button></div>
       <div class="actions"><button class="act" data-act="battle-style">合戦の部隊の印: ${UNIT_STYLE_NAME[getBattleStyle()]}</button></div>
       <div class="actions"><button class="act" data-act="army-style" aria-pressed="${view.armyStyle === 'hayashi'}">地図の部隊の印: ${view.armyStyle === 'hayashi' ? '幟の林（兵が多いほど幟が増える）' : '丸（武将名と兵数の弧）'}</button></div>
@@ -2779,7 +2809,7 @@ function onModalClick(e: Event) {
   if (act.startsWith('bk-')) {
     const say = (scene: EnvoyScene, g: General | undefined, vars: Record<string, string> = {}) => { if (g) cutinLine(st, envoyLine(st, scene, g, vars)); };
     if (act === 'bk-donate') { const g = toritsugi(st); if (donate(st, st.player)) { toast('将軍に献金した'); say('bkDonate', g); } }
-    if (act === 'bk-sponsor') { if (sponsor(st, st.player)) { toast('足利一門を将軍に立てた'); say('bkSponsor', shogunGen(st)); } }
+    if (act === 'bk-sponsor') { if (sponsor(st, st.player)) { toast('足利一門を将軍に立てた'); if (st.events?.length && eventsOn()) { refresh(); playEvents(st, () => openMenu()); return; } say('bkSponsor', shogunGen(st)); } }
     if (act === 'bk-order') { const v = ($('modal-body').querySelector('#sel-order') as HTMLSelectElement | null)?.value; if (v) { const g = shogunGen(st); const r = requestOrder(st, st.player, v); if (r !== null) { toast(r ? `${clanName(st, v)}家討伐の御内書を得た` : '御内書は下されなかった'); say(r ? 'bkOrderYes' : 'bkOrderNo', g, { foe: clanName(st, v) }); } } }
     if (act === 'bk-post') { const [k, v] = id.split(':'); const p: Post = k === 'o' ? { kind: 'office', id: v as OfficeId } : k === 's' ? { kind: 'shugo', prov: v } : { kind: 'shoban' }; const g = shogunGen(st); const r = requestPost(st, st.player, p); if (r !== null) { toast(r ? `${postName(p)}に任じられた` : `${postName(p)}の任官は退けられた`); say(r ? 'bkPostYes' : 'bkPostNo', g, { post: postName(p) }); } }
     if (act === 'bk-demand') { const g = leaderGen(st, id); const ok = demandShussi(st, st.player, id); toast(ok ? `${clanName(st, id)}家が出仕した` : `${clanName(st, id)}家は出仕を拒んだ`); say(ok ? 'bkDemandYes' : 'bkDemandNo', g); }
@@ -2889,7 +2919,7 @@ function onModalClick(e: Event) {
   if (act === 'arm-guns-m' || act === 'unarm-guns-m') { const a = st.armies[+id]; if (a && nearOwn(st, a)) armGuns(st, a, act === 'arm-guns-m' ? gunCap(a) : -(a.guns ?? 0)); refresh(); openMenu(); return; }
   if (act === 'rice-buy' || act === 'rice-sell') { const n = +id; if ((act === 'rice-buy' ? buyRice : sellRice)(st, st.player, n)) merchantSay(st, riceMerchant(st), act === 'rice-buy' ? 'mRiceBuy' : 'mRiceSell', { n: fmt(n) }, n >= 10000); refresh(); openMenu(); return; }
   if (act === 'deleg') { const dg = delegateOf(st); const k = id as DelegateKey; dg[k] = !dg[k]; toast(`${DELEGATE_NAME[k]}を${dg[k] ? '委任した' : '自分で行う'}`); refresh(); openMenu(); return; }
-  if (act === 'court-buy') { if (buyCourt(st, st.player)) { toast(`${courtName(st, st.player)}に任じられた`); courtSay(st, courtOf(st, st.player)); } refresh(); openMenu(); return; }
+  if (act === 'court-buy') { if (buyCourt(st, st.player)) { toast(`${courtName(st, st.player)}に任じられた`); if (st.events?.length && eventsOn()) { refresh(); playEvents(st, () => openMenu()); return; } courtSay(st, courtOf(st, st.player)); } refresh(); openMenu(); return; }
   if (act === 'gun-buy') { if (buyGuns(st, st.player, +id)) { toast(`鉄砲${fmt(+id)}丁を買った`); merchantSay(st, 'imai_sokyu', 'mGuns', { n: fmt(+id) }, +id >= 300); } refresh(); openMenu(); return; }
   if (act === 'item-buy') { const it = st.items[id]; if (it && buyItem(st, st.player, it)) { toast(`「${it.name}」を手に入れた`); const tea = it.kind === 'tea'; merchantSay(st, tea && personaActive('sen_soeki', st.year) ? 'sen_soeki' : 'tsuda_sogyu', tea ? 'mTea' : 'mItem', { item: it.name }, true); } refresh(); openMenu(); return; }
   if (act === 'dip') {

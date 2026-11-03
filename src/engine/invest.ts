@@ -94,6 +94,7 @@ export function monthlyWorks(s: GameState) {
     if (c.fortBuild && s.turn + 1 >= c.fortBuild.until) {
       c.fort = fortOf(c) + 1; c.fortBuild = undefined;
       if (c.fort === FORT_NAME.length - 1 && c.owner) s.clans[c.owner].prestige = Math.min(100, s.clans[c.owner].prestige + R.TENSHU_PRESTIGE);
+      if (c.owner === s.player && c.fort === FORT_NAME.length - 1) (s.events ??= []).push({ kind: 'tenshu', castle: c.id });
       if (c.owner === s.player) addLog(s, `${c.name}の${FORT_NAME[c.fort]}が成った${c.fort === FORT_NAME.length - 1 ? `（威信+${R.TENSHU_PRESTIGE}）` : ''}。`, 'castle', true);
     }
   }

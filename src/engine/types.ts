@@ -198,4 +198,7 @@ export type BigEvent =
   | { kind: 'ikki'; castle: string; troops: number; clan: string }
   | { kind: 'treaty'; treaty: 'alliance' | 'marriage'; other: string }
   | { kind: 'ship'; port: string }
-  | { kind: 'mission'; mis: string };
+  | { kind: 'mission'; mis: string }
+  | { kind: 'kan'; rank: number }
+  | { kind: 'sponsor'; gen: string }
+  | { kind: 'tenshu'; castle: string };

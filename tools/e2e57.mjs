@@ -19,7 +19,7 @@ const walk = async (tag) => {
     const st = await p.evaluate(() => { const el = document.getElementById('scene'); if (!el || el.hidden) return null; const box = el.querySelector('.op-box'); return `${document.querySelector('#scene .op-scen')?.textContent}｜${box.querySelector('h2')?.textContent ?? box.querySelector('.op-name')?.textContent ?? ''}｜${(box.querySelector('.op-line, .op-narr p')?.textContent ?? '').slice(0, 60)}`; });
     if (!st) break;
     beats.push(st);
-    if (k === 1 || (tag === 'more' && k === 8)) { await p.waitForTimeout(800); await p.screenshot({ path: `${out}/57-${tag}${k}${sfx}.png` }); }
+    if (k === 1 || (tag === 'more' && k === 8) || (tag === 'honor' && k === 20)) { await p.waitForTimeout(800); await p.screenshot({ path: `${out}/57-${tag}${k}${sfx}.png` }); }
     await p.click('#scene .op-box'); await p.waitForTimeout(220);
   }
   await done;
@@ -43,6 +43,9 @@ res.ruin = await walk('ruin');
 const port = await p.evaluate(() => { const s = window.__sengoku.state; const c = s.castles.find((x) => x.id === 'hirado'); return c.id; });
 await p.evaluate((port) => { const s = window.__sengoku.state; const kiyosu = s.castles.find((c) => c.owner === 'oda'); s.events = [{ kind: 'ikki', castle: kiyosu.id, troops: 3200, clan: 'honganji' }, { kind: 'treaty', treaty: 'alliance', other: 'takeda' }, { kind: 'treaty', treaty: 'marriage', other: 'azai' }, { kind: 'ship', port }, { kind: 'mission', mis: 'vilela' }]; }, port);
 res.more = await walk('more');
+// 任官（参議・関白・将軍）・将軍擁立・天守
+await p.evaluate(() => { const s = window.__sengoku.state; const k = s.castles.find((c) => c.owner === 'oda'); s.events = [{ kind: 'kan', rank: 4 }, { kind: 'kan', rank: 7 }, { kind: 'kan', rank: 8 }, { kind: 'sponsor', gen: 'ashikaga_yoshiaki' in s.generals ? 'ashikaga_yoshiaki' : 'ashikaga_yoshiteru' }, { kind: 'tenshu', castle: k.id }]; });
+res.honor = await walk('honor');
 const sw = await p.evaluate(() => document.documentElement.scrollWidth);
 console.log(JSON.stringify({ res, leader: await p.evaluate(() => window.__sengoku.state.generals[window.__sengoku.state.clans.oda.leader].name), sw, errors: errors.length ? errors : 'none' }, null, 1));
 await b.close();

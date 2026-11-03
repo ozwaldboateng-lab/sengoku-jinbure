@@ -37,6 +37,7 @@ export function buyCourt(s: GameState, clan: string): boolean {
     if (old && old.id !== clan) { old.court = R.DEPOSED_COURT; addLog(s, `${old.name}家は征夷大将軍の座を失った。`, 'castle', true); }
   }
   C.court = next;
+  if (clan === s.player && next >= 4) (s.events ??= []).push({ kind: 'kan', rank: next }); // 公卿（参議）より上は場面に
   addLog(s, `${clanName(s, clan)}家が朝廷に献金し、${R.COURT[next].name}に任じられた。`, next >= R.KAMPAKU ? 'castle' : 'info', clan === s.player || next >= R.KAMPAKU);
   return true;
 }

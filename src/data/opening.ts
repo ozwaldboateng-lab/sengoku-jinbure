@@ -10,4 +10,5 @@ export const OPENING_PEOPLE: [string, string, string, number][] = [
   ['hime_2', '姫二', '', 0],
   ['hime_3', '姫三', '', 0],
   ['ikki_toryo', '一向一揆の旗頭', '', 0],
+  ['daiku_toryo', '大工の棟梁', '', 0],
 ];

@@ -227,6 +227,7 @@ export function sponsor(s: GameState, clan: string): boolean {
   kyo.owner = 'ashikaga';
   A.alive = true; A.leader = g.id; A.court = R.SHOGUN; A.gold = 3000; A.food = 20000; A.prestige = Math.max(A.prestige, 60);
   g.clan = 'ashikaga'; g.status = 'governor'; g.captor = null; g.formerClan = null; g.loc = kyo.i; kyo.governor = g.id; g.kin = true;
+  if (clan === s.player) (s.events ??= []).push({ kind: 'sponsor', gen: g.id });
   for (const C of Object.values(s.clans)) if (C.id !== 'ashikaga' && (C.court ?? 0) >= R.SHOGUN) C.court = R.DEPOSED_COURT;
   s.treaties = (s.treaties ?? []).filter((t) => !((t.a === clan && t.b === 'ashikaga') || (t.b === clan && t.a === 'ashikaga')));
   s.treaties.push({ a: clan, b: 'ashikaga', kind: 'alliance', start: s.turn, until: null });
