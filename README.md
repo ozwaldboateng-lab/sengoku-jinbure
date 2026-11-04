@@ -4,7 +4,7 @@
 
 ## 遊び方
 
-- **ブラウザで遊ぶ**: [claude.ai で公開中のページ](https://claude.ai/artifact/A8FUT835Sor37rcdwickW3)
+- **ブラウザで遊ぶ**: https://ozwaldboateng-lab.github.io/sengoku-jinbure/ （GitHub Pages。開くとそのまま始まります）
 - **手元で遊ぶ**: [`dist/index.html`](dist/index.html) をダウンロードしてブラウザで開くだけです（約15MB、オフラインで動きます）。
 
 セーブはブラウザに保存されます。
