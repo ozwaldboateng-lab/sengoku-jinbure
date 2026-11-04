@@ -1,12 +1,12 @@
 import { mood, sfx } from './sound';
 import { setTacticalSound } from '../engine/tactical';
-setTacticalSound((kind, charge) => sfx(kind === 'shoot' ? 'gun' : kind === 'attack' ? (charge ? 'charge' : 'clash') : kind === 'gate' ? 'gate' : kind === 'fire' ? 'fire' : kind === 'bow' ? 'tick' : 'tick'));
+setTacticalSound((kind, charge) => sfx(kind === 'shoot' ? 'gun' : kind === 'attack' ? (charge ? 'charge' : 'clash') : kind === 'gate' || kind === 'sneak' ? 'gate' : kind === 'fire' ? 'fire' : kind === 'bow' ? 'tick' : 'tick'));
 // 合戦画面: 戦術ヘックスで部隊を操作する
 import { applyTactical } from '../engine/combat';
 import type { Target } from '../engine/move';
 import { addLog, clanName } from '../engine/state';
 import {
-  T_NAME, T_ROUT, TR, actionTile, canBow, fireChance, chargeMult, isAmbush, routAt, createTactical, doAction, endPhase, fleeRouted, moveUnit, preview, retreatSide, ruseChance,
+  T_NAME, T_ROUT, TR, actionTile, canBow, fireChance, sneakChance, chargeMult, isAmbush, routAt, createTactical, doAction, endPhase, fleeRouted, moveUnit, preview, retreatSide, ruseChance,
   siegeDay, SIEGE_DAYS, turnLabel, tcol, trow, tNeighbors, unitActions, unitAt, unitReach, canOrder, hqOf, inCommand, takeCommand, tDist, tdef, canSee, visibleTiles, doScout, scoutRange, ambushAllowance, ambushTiles, setAmbush, doVolley, volleyHelpers, volleyPreview, volleyMax, type TAction, type TUnit, type Tactical,
 } from '../engine/tactical';
 import { aiScout, aiUnit, autoResolve, nextAIUnit } from '../engine/tacticalAI';
@@ -241,9 +241,9 @@ class BattleView {
     for (const a of this.acts) {
       const tile = actionTile(a);
       const [x, y] = this.center(tile);
-      c.strokeStyle = a.kind === 'ruse' ? `rgba(140,170,255,${pulse})` : a.kind === 'fire' ? `rgba(255,150,40,${pulse})` : a.kind === 'douse' ? `rgba(120,200,255,${pulse})` : `rgba(230,80,50,${pulse})`;
+      c.strokeStyle = a.kind === 'ruse' ? `rgba(140,170,255,${pulse})` : a.kind === 'fire' ? `rgba(255,150,40,${pulse})` : a.kind === 'sneak' ? `rgba(190,160,255,${pulse})` : a.kind === 'douse' ? `rgba(120,200,255,${pulse})` : `rgba(230,80,50,${pulse})`;
       c.lineWidth = a.kind === 'ruse' ? 1.6 : 2.6;
-      if (a.kind === 'ruse' || a.kind === 'fire' || a.kind === 'douse') c.setLineDash([4, 3]);
+      if (a.kind === 'ruse' || a.kind === 'fire' || a.kind === 'douse' || a.kind === 'sneak') c.setLineDash([4, 3]);
       this.hex(x, y, S * (a.kind === 'ruse' ? 0.95 : 0.86)); c.stroke();
       c.setLineDash([]);
       animating = true;
@@ -614,7 +614,7 @@ function onTile(tile: number) {
   const u = selected();
   if (u && !u.acted && canOrder(t, u)) {
     const acts = unitActions(t, u).filter((a) => actionTile(a) === tile);
-    const order = ['attack', 'shoot', 'bow', 'gate', 'fire', 'douse', 'ruse'];
+    const order = ['attack', 'shoot', 'bow', 'gate', 'sneak', 'fire', 'douse', 'ruse'];
     if (acts.length) { pending = acts.sort((x, y) => order.indexOf(x.kind) - order.indexOf(y.kind)); view!.focus = tile; refresh(); return; }
     const reach = u.moved ? new Map() : unitReach(t, u);
     if (reach.has(tile)) {
@@ -654,6 +654,7 @@ function act(a: TAction, charge: boolean) {
   if (a.kind === 'gate') view!.float(a.tile, `門−${fmt(gateBefore - (t.gates[a.tile] ?? 0))}`, '#f0c060');
   if (a.kind === 'ruse') view!.float(a.target.tile, a.target.confused > 0 ? '混乱' : '失敗', '#9db4ff');
   if (a.kind === 'fire') view!.float(a.tile, t.fire[a.tile] ? '火計' : '不発', '#ffb050');
+  if (a.kind === 'sneak') view!.float(a.tile, t.gates[a.tile] <= 0 ? '開門' : '見破られる', '#c8b4ff');
   if (a.kind === 'douse') view!.float(a.tile, t.fire[a.tile] ? '消えず' : '消火', '#9fd8ff');
   pending = null; view!.focus = null;
   if (t.over) { refresh(); showResult(); return; }
@@ -877,6 +878,8 @@ function panelHtml(t: Tactical, s: GameState, inspect: TUnit | null): string {
       } else if (a.kind === 'fire') {
         const e = unitAt(t, a.tile);
         opts.push(`<button class="act primary" data-bact="do" data-i="${i}">火計（${t.tiles[a.tile] === 'G' ? '城門' : esc(e?.name ?? '')}）成功${Math.round(fireChance(t, u) * 100)}%</button>`);
+      } else if (a.kind === 'sneak') {
+        opts.push(`<button class="act primary" data-bact="do" data-i="${i}">忍び込み（石垣を越えて城門を内から開ける・一度だけ）成功${Math.round(sneakChance(t, u) * 100)}%</button>`);
       } else if (a.kind === 'douse') {
         opts.push(`<button class="act primary" data-bact="do" data-i="${i}">消火　成功${Math.round(TR.DOUSE * 100)}%</button>`);
       } else if (a.kind === 'gate') {

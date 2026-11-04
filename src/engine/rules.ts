@@ -35,6 +35,7 @@ export const ROUT_EXTRA_LOSS = 0.15;
 export const MIN_ARMY = 200; // これ未満の兵しか残らない軍団は解散する
 
 // 武将能力 → 攻撃力・防御力・壊乱閾値（兵科は持たず、武将と地形で差がつく）
+export const STAFF_BRA = 0.5; // 補佐の武勇が主将より高いとき、その差のこの割合だけ軍団の武勇に足す
 export const atkOf = (bra: number, lea: number) => 0.5 + (0.6 * bra + 0.4 * lea) / 100;
 export const defOf = (lea: number, int: number, cha: number) => 0.5 + (0.6 * lea + 0.2 * int + 0.2 * cha) / 100;
 export const routOf = (lea: number, cha: number) => 0.6 - (0.2 * cha + 0.1 * lea) / 100;
@@ -95,6 +96,7 @@ export const PLOT_BASE = 0.15; // 成功率 = 0.15 + (知略 − 城主知略)/1
 export const PLOT_NEUTRAL = 0.15;
 export const PLOT_CAUGHT = 0.1; // 失敗時に大名の城で捕らえられる確率
 export const NAIO_MORALE = 0.3; // 内応した城の城兵士気低下（自動決着）
+export const NINJA_SNEAK = 0.3, NINJA_SNEAK_MORALE = 0.2, NINJA_COUNTER = 0.15; // 自動決着の城攻め: 攻め手の忍びが城門を内から開ける見込みと城兵の士気低下、城方の忍びが防ぐ分
 export const AUTO_FIRE_INT = 75; // 自動決着の攻城で火計を使う知略
 export const AUTO_FIRE_BONUS = 1.2;
 

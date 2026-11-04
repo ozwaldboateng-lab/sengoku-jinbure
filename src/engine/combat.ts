@@ -7,6 +7,7 @@ import { ikkiCasualty } from './ikki';
 import * as R from './rules';
 import { captureCastle, captureGeneral, killGeneral, naioActive, removeArmy } from './ops';
 import { membersOf } from './corps';
+import { TRAITS } from '../data/traits';
 import { castleDef, addLog, allied, armyCombat, armyStats, castleAt, clanName, gen, hexOwner, hostile, noteClash, occupancy, rand } from './state';
 import type { Army, BattleReport, Castle, GameState } from './types';
 import type { Target } from './move';
@@ -131,7 +132,11 @@ export function battle(s: GameState, a: Army, t: Target, charge: boolean, joined
   // 内応（調略）: 城兵が動揺
   const cas = castleAt(s, defHex);
   if (cas && naioActive(s, cas, a.clan)) { D.morale -= R.NAIO_MORALE; events.push('内応者が城門を開いた'); cas.naio = undefined; }
-  const autoFire = !!cas && A.int >= R.AUTO_FIRE_INT;
+  // 忍び: 攻め手に忍びがいれば、知略によらず火計を使い、石垣を越えて城門を内から開けることがある（城方に忍びがいれば防がれやすい）
+  const ninjaA = !!cas && idsA.some((id) => TRAITS[id] === 'ninja');
+  const ninjaD = idsD.some((id) => TRAITS[id] === 'ninja') ? R.NINJA_COUNTER : 0;
+  const autoFire = !!cas && (A.int >= R.AUTO_FIRE_INT || (ninjaA && rand(s) >= ninjaD));
+  if (ninjaA && rand(s) < R.NINJA_SNEAK - ninjaD) { D.morale -= R.NINJA_SNEAK_MORALE; events.push('忍びが石垣を越えて城門を内から開けた'); }
   const cannon = cas ? attackers.reduce((x, o) => x + (o.cannon ?? 0), 0) : 0;
   const defMult0 = defMultAt(s, defHex);
   const defMult = cannon ? 1 + (defMult0 - 1) * Math.max(0.4, 1 - R.CANNON_DEF * cannon) : defMult0;
@@ -203,7 +208,8 @@ export function battle(s: GameState, a: Army, t: Target, charge: boolean, joined
     if (army.morale < R.RETREAT_MORALE) p *= R.DEATH_LOW_MORALE;
     if (enemyAdj >= 2) p *= R.DEATH_ADJ2;
     if (rand(s) < p) {
-      const g = s.generals[army.main];
+      const g = s.generals[army.main], guard = guardOf(s, army);
+      if (guard && rand(s) < KENSEI_GUARD) { events.push(guardLine(guard, g)); addLog(s, `${guardLine(guard, g)}。`, 'battle', army.clan === s.player); return; }
       events.push(`${g.name}討死`);
       killGeneral(s, g, '討死');
       if (s.armies[army.id]) {
@@ -281,14 +287,24 @@ export function battle(s: GameState, a: Army, t: Target, charge: boolean, joined
   return report;
 }
 
+// 剣豪の守り: 同じ軍団に剣豪がいれば、主将の討死・捕縛を半分にする（主将本人が剣豪なら自分の身を守る）
+const KENSEI_GUARD = 0.5;
+function guardOf(s: GameState, a: Army) {
+  const ids = membersOf(a);
+  const id = TRAITS[a.main] === 'kensei' ? a.main : ids.find((x) => x !== a.main && TRAITS[x] === 'kensei' && s.generals[x]?.status !== 'dead');
+  return id ? s.generals[id] : null;
+}
+const guardLine = (guard: { name: string; id: string }, g: { name: string; id: string }) => guard.id === g.id ? `${g.name}は自ら太刀をふるって斬り抜けた` : `${guard.name}が斬り込む敵を斬り払い、${g.name}を守った`;
+
 export function destroyArmy(s: GameState, army: Army, enemyClan: string | null, events: string[]) {
   events.push(`${s.generals[army.main].name}隊壊滅`);
-  const ids = membersOf(army);
+  const ids = membersOf(army), mainId = army.main, guard = guardOf(s, army);
   removeArmy(s, army);
   for (const id of ids) {
     const g = gen(s, id);
     if (!g || g.ikki || g.status === 'dead') continue;
     const r = rand(s);
+    if (id === mainId && guard && guard.status !== 'dead' && r < R.DESTROYED_DEATH + (enemyClan ? R.DESTROYED_CAPTURE : 0) && rand(s) < KENSEI_GUARD) { events.push(guardLine(guard, g)); addLog(s, `${guardLine(guard, g)}。`, 'battle', g.clan === s.player); continue; } // 剣豪が主将を落ち延びさせる
     if (r < R.DESTROYED_DEATH) { events.push(`${g.name}討死`); killGeneral(s, g, '討死'); }
     else if (enemyClan && r < R.DESTROYED_DEATH + R.DESTROYED_CAPTURE) { events.push(`${g.name}捕縛`); captureGeneral(s, g, enemyClan); }
   }

@@ -457,7 +457,7 @@ function mon(name: string, color: string) {
 }
 
 function abilBlock(st: { bra: number; int: number; lea: number; cha: number } | null) {
-  const cell = (k: string, v: number | null) => `<div class="${v === null ? 'hidden' : ''}"><b>${v === null ? '？' : v}</b><span>${k}</span></div>`;
+  const cell = (k: string, v: number | null) => `<div class="${v === null ? 'hidden' : ''}"><b>${v === null ? '？' : Math.round(v)}</b><span>${k}</span></div>`;
   return `<div class="abil">${cell('武勇', st ? st.bra : null)}${cell('知略', st ? st.int : null)}${cell('統率', st ? st.lea : null)}${cell('魅力', st ? st.cha : null)}</div>`;
 }
 const known = (g: General) => !!s && (g.clan === s.player || s.revealed.includes(g.id));
@@ -2201,7 +2201,7 @@ const TABS: Record<string, (st: GameState) => string> = {
   help: () => `<h3 class="sect-h">操作</h3>${KEYS_HTML}<h3 class="sect-h">用語集</h3>${GLOSSARY_HTML}<h3 class="sect-h">仕組み</h3>` + helpList([
     `1ターン＝1か月。軍団は移動力${R.MOVE_POINTS}（平地1・森/川2・山3・城1）。敵軍に隣接すると止まる。1ヘックスに1軍団。`,
     `隣接する敵軍・城を攻撃すると、その月の会戦を最大${R.ROUNDS}合で解決。損害は相手の戦闘力に比例し、兵が多いほど有利。`,
-    '兵科はない。武将の能力が部隊の性格になる。攻撃力＝0.5＋(武勇×0.6＋統率×0.4)÷100、防御力＝0.5＋(統率×0.6＋知略×0.2＋魅力×0.2)÷100、壊乱閾値＝0.60−(魅力×0.2＋統率×0.1)÷100。補佐は武勇・知略を補う。',
+    '兵科はない。武将の能力が部隊の性格になる。攻撃力＝0.5＋(武勇×0.6＋統率×0.4)÷100、防御力＝0.5＋(統率×0.6＋知略×0.2＋魅力×0.2)÷100、壊乱閾値＝0.60−(魅力×0.2＋統率×0.1)÷100。補佐は知略を補い（高いほうを使う）、武勇は主将との差の半分だけ補う。',
     '与える損害＝攻撃力×兵×士気÷(地形の防御倍率×相手の防御力)。士気が壊乱閾値を下回ると潰走。川・湿地では閾値+0.05、城内では−0.10、門徒は−0.10。',
     '地形で活きる能力が変わる: 平地の突撃は×1.3（他は×1.1）。森にいると計略+15%、知略で15以上勝れば森からの攻撃が伏兵×1.2。丘からの攻撃×1.15。',
     `同じ敵に隣接する味方は戦闘力の${R.FLANK_SUPPORT * 100}%で支援し、敵士気を下げる（側面${R.MORALE_FLANK}、包囲${R.MORALE_SURROUND}）。退路がなければ壊滅。`,

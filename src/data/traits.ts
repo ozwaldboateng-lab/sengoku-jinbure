@@ -2,8 +2,8 @@
 export type TraitId = 'ninja' | 'kensei' | 'chikujo' | 'hojutsu' | 'chajin' | 'gunshi' | 'suigun' | 'sankan' | 'gaiko' | 'so';
 export const TRAIT_NAME: Record<TraitId, string> = { ninja: '忍び', kensei: '剣豪', chikujo: '築城', hojutsu: '砲術', chajin: '茶人', gunshi: '軍師', suigun: '水軍', sankan: '算勘', gaiko: '外交', so: '僧' };
 export const TRAIT_NOTE: Record<TraitId, string> = {
-  ninja: '忍び頭に就ければ、暗殺・流言・放火・探りができ、敵の調略や忍びを防ぐ。合戦では物見が1回多い。',
-  kensei: '軍団の傘下にいれば、その軍団の練度が伸びやすく、上限も10上がる。',
+  ninja: '忍び頭に就ければ、暗殺・流言・放火・探りができ、敵の調略や忍びを防ぐ。合戦では物見が1回多い。城攻めでは火計が知略によらずよく決まり（7割以上）、石垣を越えて城門を内から開けることがある（戦術画面は一度だけ4割、自動決着は3割）。城方に忍びがいれば、どちらも防がれやすい。',
+  kensei: '軍団の傘下にいれば、その軍団の練度が伸びやすく、上限も10上がる。主将の討死・捕縛を半分に防ぐ（主将本人が剣豪でも同じ）。',
   chikujo: '城主に置けば、城門の修理が倍になり、城攻めで門が固い。城の造りを一段改められる（普請）。',
   hojutsu: '軍団の傘下にいれば、その軍団の鉄砲隊が強い（2割増し）。',
   chajin: '茶会で家臣の恩を上げる。家に茶人がいれば、名物を添えた外交がよく効く。',

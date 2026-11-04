@@ -1,6 +1,6 @@
 // 合戦（戦術ヘックス）: 野戦と攻城戦
 // 戦略マップで攻撃が起きると、別のヘックスマップで部隊を動かして決着をつける。
-import { childrenOf, directOf } from './corps';
+import { childrenOf, directOf, membersOf } from './corps';
 import { HEXES } from './map';
 import type { Target } from './move';
 import * as R from './rules';
@@ -9,6 +9,7 @@ import { hasProduct } from './money';
 import { defenderSupports, supportArmies } from './combat';
 import { tsukaiLabel, tsukaiOf } from './ranks';
 import type { Army, GameState, General } from './types';
+import { TRAITS } from '../data/traits';
 import { armyHas, CHIKUJO_GATE, govTrait, GUNSHI_COURIER, GUNSHI_RANGE, HOJUTSU_GUN, traitOf } from './traits';
 
 export type TTerrain = 'P' | 'F' | 'H' | 'R' | 'S' | 'C' | 'K' | 'W' | 'G';
@@ -45,6 +46,7 @@ export const TR = {
   DEATH_CHARGE: 0.02,
   FIRE_RANGE: 2, // 火計の届く距離（攻城戦の攻め手のみ）
   FIRE_TURNS: 2, // 燃え続ける刻数
+  NINJA_FIRE: 0.7, NINJA_SNEAK: 0.4, NINJA_COUNTER: 0.15, // 忍び: 火計の成功率の下限、石垣を越えて城門を内から開ける見込み、城方に忍びがいれば両方とも−0.15
   FIRE_BASE: 0.35, // 成功率 = 0.35 + (知略 − 城方の最高知略)/100
   FIRE_HIT: 0.12, // 着火時: 部隊の兵の12%、士気−0.15
   FIRE_BURN: 0.08, // 毎刻: 部隊の兵の8%、士気−0.1
@@ -71,6 +73,7 @@ export interface TUnit {
   routed: boolean; confused: number; out: null | 'dead' | 'escaped';
   cmd?: boolean; // この手番に指揮下にある（本陣の近く、または伝令を受けた）
   hidden?: boolean; // 伏兵（敵から見えない。動くか仕掛けると現れる）
+  ninja?: boolean; sneaked?: boolean; // 忍びの部隊と、忍び込みを使ったか（合戦に一度）
 }
 // 伝令: 本陣から range 以内は自由に指揮、外の部隊は伝令（手番ごとに couriers 回）で指揮する
 export interface Command { clan: string; range: number; couriers: number; left: number; label: string; tsukai: string[]; }
@@ -142,12 +145,16 @@ function armyUnits(s: GameState, a: Army, side: Side, hq: boolean, nextId: () =>
   // 主将の隊と、主将のすぐ下の武将（最大2人）がそれぞれ率いる隊。その下の武将は属する隊の兵を厚くし、攻防を少し上げる
   const direct = a.ikki ? [] : directOf(s, a).slice(0, R.CORPS_CHILDREN);
   const subtree = (id: string): General[] => childrenOf(s, a, id).flatMap((c) => [c, ...subtree(c.id)]);
-  type Part = { role: TUnit['role']; g: General | null; w: number; bonus: number };
+  type Part = { role: TUnit['role']; g: General | null; w: number; bonus: number; nin?: boolean };
+  const isNin = (x: General | null | undefined) => !!x && TRAITS[x.id] === 'ninja';
   const parts: Part[] = [{ role: 'main', g: a.ikki ? null : m, w: personalCap(s, m) * R.CORPS_MAIN_TROOP, bonus: 0 }];
   for (const c of direct) {
     const below = subtree(c.id);
-    parts.push({ role: 'deputy', g: c, w: [c, ...below].reduce((x, h) => x + personalCap(s, h) * R.CORPS_SUB_TROOP, 0), bonus: Math.min(R.CORPS_UNIT_BONUS_MAX, below.length * R.CORPS_UNIT_BONUS) });
+    parts.push({ role: 'deputy', g: c, w: [c, ...below].reduce((x, h) => x + personalCap(s, h) * R.CORPS_SUB_TROOP, 0), bonus: Math.min(R.CORPS_UNIT_BONUS_MAX, below.length * R.CORPS_UNIT_BONUS), nin: [c, ...below].some(isNin) });
   }
+  // 忍びの者がいる隊: その隊の大将か、その下に忍びがいれば（隊を持たない忍びは本陣に付く）
+  const covered = new Set(direct.flatMap((c) => [c.id, ...subtree(c.id).map((x) => x.id)]));
+  parts[0].nin = isNin(m) || membersOf(a).some((id) => id !== m.id && !covered.has(id) && isNin(s.generals[id]));
   // 傘下がおらず大軍なら、主将の下に名無しの足軽隊（主将の値から一段落ちる）
   if (!direct.length && rest > 6000) { parts[0].w = 0.6; parts.push({ role: 'ashigaru', g: null, w: 0.4, bonus: 0 }); }
   // 本陣（主将の旗本）は兵の35%以上を持つ。傘下が厚くても本陣だけが薄くならないように
@@ -171,7 +178,7 @@ function armyUnits(s: GameState, a: Army, side: Side, hq: boolean, nextId: () =>
       id: nextId(), side, clan: a.clan, army: a.id, general: g?.id ?? null, role: p.role,
       name: a.ikki ? '一向一揆' : g ? `${g.name}隊` : `${m.name.slice(0, -2) || m.name}足軽隊`, hq: hq && p.role === 'main',
       troops, troops0: troops, morale: a.routed ? Math.max(a.morale, rout + R.ROUTED_START_MARGIN) : a.morale, atk, def, rout, int: g ? g.int : 40,
-      tile: -1, mp: 0, moved: false, acted: false, routed: false, confused: a.routed ? 1 : 0, out: null,
+      tile: -1, mp: 0, moved: false, acted: false, routed: false, confused: a.routed ? 1 : 0, out: null, ninja: !!g && !!p.nin,
     };
   }), ...gunUnit];
 }
@@ -487,14 +494,18 @@ export function unitReach(t: Tactical, u: TUnit): Map<number, number> {
 }
 
 export type TAction = { kind: 'attack'; target: TUnit } | { kind: 'gate'; tile: number } | { kind: 'bow'; target: TUnit } | { kind: 'shoot'; target: TUnit } | { kind: 'ruse'; target: TUnit }
-  | { kind: 'fire'; tile: number } | { kind: 'douse'; tile: number };
+  | { kind: 'fire'; tile: number } | { kind: 'douse'; tile: number } | { kind: 'sneak'; tile: number };
 export const actionTile = (a: TAction) => ('tile' in a ? a.tile : a.target.tile);
 
 // 火計の成功率: 攻め手の知略と、城方で最も知略の高い武将の差
 export function fireChance(t: Tactical, u: TUnit) {
   const best = Math.max(40, ...t.units.filter((x) => !x.out && x.side !== u.side && x.general).map((x) => x.int));
-  return Math.max(0.1, Math.min(0.85, TR.FIRE_BASE + (u.int - best) / 100));
+  const p = Math.max(0.1, Math.min(0.85, TR.FIRE_BASE + (u.int - best) / 100));
+  return u.ninja ? Math.max(0.1, Math.min(0.9, Math.max(p, TR.NINJA_FIRE)) - ninjaCounter(t, u)) : p; // 忍びは知略によらず火付けが巧い
 }
+// 城方（相手側）に忍びの部隊が残っていれば、忍びの火計・忍び込みを防ぐ
+const ninjaCounter = (t: Tactical, u: TUnit) => (t.units.some((x) => !x.out && x.side !== u.side && x.ninja) ? TR.NINJA_COUNTER : 0);
+export const sneakChance = (t: Tactical, u: TUnit) => Math.max(0.05, TR.NINJA_SNEAK - ninjaCounter(t, u));
 
 export function canBow(t: Tactical, u: TUnit) {
   return t.kind === 'siege' && u.side === 'D' && ['C', 'K', 'G'].includes(t.tiles[u.tile]);
@@ -525,6 +536,11 @@ export function unitActions(t: Tactical, u: TUnit): TAction[] {
     }
   }
   if (t.kind === 'siege' && u.side === 'D') for (const i of [u.tile, ...adj]) if (t.fire[i]) out.push({ kind: 'douse', tile: i });
+  // 忍び込み: 石垣に接した忍びの部隊が、いちばん近い閉じた城門を内から開ける（合戦に一度）
+  if (t.kind === 'siege' && u.side === 'A' && u.ninja && !u.sneaked && adj.some((j) => t.tiles[j] === 'W')) {
+    const gs = Object.keys(t.gates).map(Number).filter((i) => (t.gates[i] ?? 0) > 0).sort((x, y) => tDist(t, u.tile, x) - tDist(t, u.tile, y));
+    if (gs.length) out.push({ kind: 'sneak', tile: gs[0] });
+  }
   return out;
 }
 
@@ -737,6 +753,13 @@ export function doAction(t: Tactical, s: GameState, u: TUnit, a: TAction, charge
     const e = unitAt(t, a.tile);
     if (e) { const loss = Math.round(e.troops * TR.FIRE_HIT); parts.push(`${e.name}−${loss}`); e.morale = Math.max(0, e.morale - 0.15); hit(t, s, e, loss, u); if (!e.out) moveOutOfFire(t, e); }
     const m = parts.join('　'); t.log.push(m); checkEnd(t, s); return m;
+  }
+  if (a.kind === 'sneak') {
+    u.sneaked = true;
+    const ok = rand(s) < sneakChance(t, u);
+    if (ok) t.gates[a.tile] = 0;
+    const m = ok ? `${u.name}の忍びが石垣を越えて忍び込み、城門を内から開けた！` : `${u.name}の忍び込みは見破られた。`;
+    t.log.push(m); checkEnd(t, s); return m;
   }
   if (a.kind === 'douse') {
     const ok = rand(s) < TR.DOUSE;

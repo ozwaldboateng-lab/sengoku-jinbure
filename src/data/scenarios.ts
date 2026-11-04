@@ -51,7 +51,7 @@ export const SCENARIOS: Scenario[] = [
       [['oda_nobuyasu', '織田信安', 'oda_iwakura', 50, 52, 56, 50, 'inuyama'], 1528],
       [['oda_nobukata', '織田信賢', 'oda_iwakura', 56, 44, 52, 40, 'inuyama'], 1535],
       [['yamauchi_moritoyo', '山内盛豊', 'oda_iwakura', 58, 56, 58, 54, 'inuyama'], 1510],
-      [['imagawa_yoshimoto', '今川義元', 'imagawa', 68, 82, 80, 82, 'sunpu'], 1519],
+      [['imagawa_yoshimoto', '今川義元', 'imagawa', 68, 86, 80, 82, 'sunpu'], 1519],
       [['taigen_sessai', '太原雪斎', 'imagawa', 40, 95, 74, 80, 'sunpu'], 1496],
       [['asahina_yasuyoshi', '朝比奈泰能', 'imagawa', 70, 66, 72, 66, 'kakegawa'], 1497],
       [['matsui_munenobu', '松井宗信', 'imagawa', 76, 55, 70, 62, 'hikuma'], 1515],

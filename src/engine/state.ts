@@ -63,13 +63,13 @@ export const clanUpkeep = (s: GameState, clan: string) => Math.round(clanTroops(
 
 export const gen = (s: GameState, id: string | null): General | null => (id ? s.generals[id] ?? null : null);
 
-// 補佐の扱い（v1.1）: 武勇・知略は主将と補佐の高い方、統率・魅力は主将の値
+// 補佐の扱い（v1.1、v1.89で武勇を半分に）: 知略は主将と補佐の高い方、武勇は主将に補佐との差の半分を足す、統率・魅力は主将の値
 export function armyStats(s: GameState, a: Army) {
   const m = s.generals[a.main];
   // 主将とすぐ下の武将のうち高い方（武勇・知略）
   const direct = (a.staff ?? (a.deputy ? [a.deputy] : [])).map((id) => gen(s, id)).filter((g): g is General => !!g && (g.boss ?? a.main) === a.main);
   return {
-    bra: Math.max(m.bra, ...direct.map((g) => g.bra)),
+    bra: m.bra + Math.max(0, ...direct.map((g) => g.bra - m.bra)) * R.STAFF_BRA, // 補佐の武勇は主将との差の半分だけ（個人の腕前が軍団全体に乗りすぎないように）
     int: Math.max(m.int, ...direct.map((g) => g.int)),
     lea: m.lea,
     cha: m.cha,

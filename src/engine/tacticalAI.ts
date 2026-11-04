@@ -1,7 +1,7 @@
 // 合戦AI: 部隊ごとに「移動→行動」を決める。プレイヤーの委任にも使う。
 import type { GameState } from './types';
 import {
-  T_COST, TR, canBow, fireChance, doAction, endPhase, fleeRouted, moveUnit, power, preview, ruseChance, tDist, tNeighbors,
+  T_COST, TR, canBow, fireChance, sneakChance, doAction, endPhase, fleeRouted, moveUnit, power, preview, ruseChance, tDist, tNeighbors,
   takeCommand, tdef, canSee, doScout, noteSeen, scoutRange, visibleTiles, doVolley, volleyHelpers, volleyPreview, unitActions, unitAt, unitReach, type Side, type TAction, type TUnit, type Tactical,
 } from './tactical';
 
@@ -33,6 +33,7 @@ function value(t: Tactical, u: TUnit, a: TAction, charge: boolean): number {
     const gain = t.tiles[a.tile] === 'G' ? t.gateMax * 0.6 + 200 : (e ? e.troops * 0.2 + 150 : 0);
     return p * gain;
   }
+  if (a.kind === 'sneak') return sneakChance(t, u) * (t.gateMax * 0.8 + 300); // 城門を開けられれば大きい
   if (a.kind === 'douse') return t.tiles[a.tile] === 'G' || unitAt(t, a.tile) ? 260 : 120;
   if (a.kind === 'ruse') {
     const e = a.target;
@@ -127,7 +128,11 @@ export function aiUnit(t: Tactical, s: GameState, u: TUnit, forceAuto = false): 
   // 目標
   let goals: number[];
   if (auto) goals = [u.tile];
-  else if (t.kind === 'siege' && u.side === 'A') goals = [t.tiles.indexOf('K')];
+  else if (t.kind === 'siege' && u.side === 'A' && u.ninja && !u.sneaked && !u.hq && Object.values(t.gates).some((g) => g > 0)) {
+    // 忍びの隊は、まず石垣の際へ寄って忍び込みを狙う
+    const near = t.tiles.map((_, i) => i).filter((i) => t.tiles[i] !== 'W' && !['C', 'K', 'G'].includes(t.tiles[i]) && tNeighbors(t, i).some((j) => t.tiles[j] === 'W'));
+    goals = near.length ? near : [t.tiles.indexOf('K')];
+  } else if (t.kind === 'siege' && u.side === 'A') goals = [t.tiles.indexOf('K')];
   else if (t.kind === 'siege' && u.side === 'D') {
     const broken = Object.keys(t.gates).map(Number).filter((g) => t.gates[g] <= 0 && !unitAt(t, g));
     goals = broken.length ? broken : [u.tile];
