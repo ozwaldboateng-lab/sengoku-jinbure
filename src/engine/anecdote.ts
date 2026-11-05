@@ -9,6 +9,7 @@ export const fillNames = (s: GameState, t: string) => t.replace(/\{(\w+)\}/g, (_
 export function anecdoteReady(s: GameState, a: Anecdote) {
   if ((s.anecdotes ?? []).includes(a.id) || s.year < a.from || s.year > a.to) return false;
   if (!a.who.every((id) => alive(s, id))) return false;
+  if (a.gone?.some((id) => alive(s, id))) return false;
   if (a.active && s.generals[a.who[0]].status === 'young') return false;
   if (a.apart) { const [x, y] = a.who.map((id) => s.generals[id].clan); if (!x || !y || x === y) return false; }
   return true;

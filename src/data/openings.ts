@@ -12,6 +12,8 @@ export interface OpeningBeat {
   mark?: string[]; // 光る輪を出す城のid
   arrow?: [string, string][]; // 進軍の矢印（城のidから城のidへ）
   sound?: string; // その場面で鳴らす効果音（ゲームの途中の場面だけ）
+  alt?: string; // 逸話: who の武将がゲームにいない・死んでいるときに代わりに出す語り（なければその一枚を飛ばす）
+  need?: string; // 逸話: この武将がいるときだけ出す一枚
   bg?: string; // 背景の絵（SCENE_ART のキー。絵が届いていなければ地図のまま）。ゲームの途中の場面だけ
 }
 

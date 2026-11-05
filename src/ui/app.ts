@@ -19,6 +19,7 @@ import type { Army, BattleReport, BigEvent, Castle, Front, GameState, General, I
 import { openingOn, openTitleScreen, setOpeningOn, titleOpen } from './title';
 import { mood, renderPreview, setSound, sfx, soundSettings, wireSound, type Mood } from './sound';
 import { playScene } from './scene';
+import { OPENING_PEOPLE } from '../data/opening';
 import { ANECDOTES, STAT_NAME } from '../data/anecdotes';
 import { fillNames, fireAnecdote } from '../engine/anecdote';
 import { temperOf } from '../engine/lines';
@@ -994,6 +995,7 @@ const EVENTS_KEY = 'sengoku-events';
 const eventsOn = () => { try { const v = localStorage.getItem(EVENTS_KEY); if (v === 'off') return false; if ((navigator as Navigator & { webdriver?: boolean }).webdriver) return v === 'on'; } catch { /* 読めなければ出す */ } return true; };
 // 親しい者の呼び方: 姓を除いた名（「織田信広」→「信広」）
 const callName = (g: General) => (g.name.length >= 3 ? g.name.slice(-2) : g.name);
+const OPENING_IDS = new Set(OPENING_PEOPLE.map(([id]) => id));
 function eventBeats(st: GameState, e: BigEvent): { title: string; mood: Mood; beats: OpeningBeat[] } {
   const P = st.player, C = st.clans[P], lord = C.leader ? st.generals[C.leader] : undefined;
   const gen = (id: string | null | undefined) => (id ? st.generals[id] : undefined);
@@ -1094,7 +1096,16 @@ function eventBeats(st: GameState, e: BigEvent): { title: string; mood: Mood; be
     const a = ANECDOTES.find((x) => x.id === e.id)!, main = st.generals[a.who[0]];
     const loc = st.castles[main.loc], base = { at: loc?.id, zoom: 1.5, light: main.clan ? [main.clan] : [], mark: loc ? [loc.id] : [] };
     const clanOf = (id: string) => { const c = st.generals[id]?.clan; return c && st.clans[c] ? `${st.clans[c].name}家` : '在野'; };
-    const beats: OpeningBeat[] = a.beats.map((b) => ({ ...b, bg: b.bg ?? a.bg })).map((b) => b.who ? { ...b, ...base, name: st.generals[b.who]?.name ?? '', label: b.label || clanOf(b.who), text: fillNames(st, b.text) } : { ...b, ...base, head: b.head && fillNames(st, b.head), text: fillNames(st, b.text) });
+    const extra = (id: string) => id.startsWith('g_') || OPENING_IDS.has(id) || !!PERSONAS[id]; // 武将でない話し手（汎用の顔・序幕の人物・茶人や公家などの人物）
+    const here = (id: string) => { const g = st.generals[id]; return !!g && g.status !== 'dead'; };
+    // 脇役: g_ で始まる id は汎用の顔（名は beat の name）。武将の脇役がいなければ alt の語りに置き換えるか飛ばす。need の武将がいなければ飛ばす
+    const src = a.beats.flatMap((b): OpeningBeat[] => {
+      if (b.need && !here(b.need)) return [];
+      if (b.who && PERSONAS[b.who] && !personaActive(b.who, st.year)) return b.alt ? [{ text: b.alt, bg: b.bg }] : [];
+      if (b.who && !extra(b.who) && !here(b.who)) return b.alt ? [{ text: b.alt, bg: b.bg }] : [];
+      return [b];
+    });
+    const beats: OpeningBeat[] = src.map((b) => ({ ...b, bg: b.bg ?? a.bg })).map((b) => b.who && extra(b.who) ? { ...b, ...base, name: b.name ?? '', label: b.label ?? '', text: fillNames(st, b.text) } : b.who ? { ...b, ...base, name: st.generals[b.who]?.name ?? '', label: b.label || clanOf(b.who), text: fillNames(st, b.text) } : { ...b, ...base, head: b.head && fillNames(st, b.head), text: fillNames(st, b.text) });
     const gains = new Map<string, string[]>();
     for (const [id, k, n] of a.gain) gains.set(id, [...(gains.get(id) ?? []), `${STAT_NAME[k]}+${n}`]);
     beats.push({ bg: a.bg, head: '逸話', text: `${[...gains].map(([id, xs]) => `${st.generals[id]?.name ?? ''}（${clanOf(id)}）: ${xs.join('・')}`).join('、')}`, ...base });
