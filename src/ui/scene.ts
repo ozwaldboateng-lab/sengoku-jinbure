@@ -3,6 +3,9 @@ import type { OpeningBeat } from '../data/openings';
 import type { GameState } from '../engine/types';
 import type { MapView } from './render';
 import { sfx, type Sfx } from './sound';
+import { SCENE_ART } from '../data/sceneArt';
+import { MINATO_ART } from '../data/scenes';
+const ART = (k: string) => SCENE_ART[k] ?? (k === 'minato' ? MINATO_ART : undefined); // 湊は幕間の絵を借りる
 
 const esc = (x: string) => x.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 let playing: { beats: OpeningBeat[]; i: number; view: MapView; st: GameState; title: string; face: (id: string, w: number) => string; done: () => void; keep: { scale: number; ox: number; oy: number; highlight: MapView['highlight']; marks: MapView['marks'] } } | null = null;
@@ -32,9 +35,21 @@ function next() {
   p.i++; apply(false); draw();
   const sb = p.beats[p.i]; if (sb.sound) sfx(sb.sound as Sfx); else if (sb.who) sfx('ponn');
 }
+// 背景の絵: 一枚ごとに bg があればその絵を地図の上に重ねる（変わるときはゆっくり入れ替える）
+function art(key: string | undefined) {
+  let el = document.getElementById('scene-art') as HTMLDivElement | null;
+  if (!el) { el = document.createElement('div'); el.id = 'scene-art'; el.innerHTML = '<img alt=""><img alt="">'; document.body.appendChild(el); }
+  const src = key ? ART(key) : undefined;
+  const imgs = Array.from(el.querySelectorAll('img')), on = imgs.find((i) => i.classList.contains('on'));
+  if ((on?.dataset.k ?? '') === (src ? key : '')) return;
+  imgs.forEach((i) => i.classList.remove('on'));
+  if (src) { const next = imgs.find((i) => i !== on)!; next.src = src; next.dataset.k = key!; next.classList.add('on'); }
+  el.classList.toggle('show', !!src);
+}
 function end() {
   const p = playing; if (!p) return;
   playing = null;
+  art(undefined);
   document.getElementById('scene')!.hidden = true;
   document.body.classList.remove('in-scene');
   const v = p.view; v.resize(); Object.assign(v, { scale: p.keep.scale, ox: p.keep.ox, oy: p.keep.oy, highlight: p.keep.highlight, marks: p.keep.marks }); v.invalidate();
@@ -62,6 +77,7 @@ function apply(instant: boolean) {
 }
 function draw() {
   const p = playing!, b = p.beats[p.i], n = p.beats.length;
+  art(b.bg);
   const body = b.who
     ? `<div class="op-who">${p.face(b.who, 168) || `<span class="op-noface">${esc((b.name ?? '').slice(0, 2))}</span>`}<div><div class="op-name">${esc(b.name ?? '')}<span>${esc(b.label ?? '')}</span></div><p class="op-line">「${esc(b.text)}」</p></div></div>`
     : `<div class="op-narr">${b.head ? `<h2>${esc(b.head)}</h2>` : ''}<p>${esc(b.text)}</p></div>`;

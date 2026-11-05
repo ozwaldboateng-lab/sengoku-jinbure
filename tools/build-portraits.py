@@ -1,4 +1,4 @@
-# 顔画像: assets/portraits/<武将名>.png（320×400 以上、縦横比4:5）を 200×250 の WebP にして src/data/portraits.ts へ埋め込む
+# 顔画像: assets/portraits/<武将名>.png（320×400 以上、縦横比4:5）を 200×250 の WebP にして src/data/portraits.ts へ埋め込む（容量のため quality 72）
 import base64, glob, io, os, re, sys
 from PIL import Image
 
@@ -12,7 +12,7 @@ for f in sorted(glob.glob(os.path.join(root, 'assets/portraits/*.png'))):
     if not gid:
         missing.append(name); continue
     im = Image.open(f).convert('RGB').resize((200, 250), Image.LANCZOS)
-    buf = io.BytesIO(); im.save(buf, 'WEBP', quality=80, method=6)
+    buf = io.BytesIO(); im.save(buf, 'WEBP', quality=72, method=6)
     out.append((gid, name, base64.b64encode(buf.getvalue()).decode()))
 with open(os.path.join(root, 'src/data/portraits.ts'), 'w', encoding='utf-8') as w:
     w.write('// 自動生成（tools/build-portraits.py）。武将id → 顔画像（200×250 WebP）\n')

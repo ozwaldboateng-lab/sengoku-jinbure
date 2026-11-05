@@ -20,7 +20,7 @@ for (const id of ids) {
   const done = p.evaluate(() => window.__sengoku.playEvents());
   await p.waitForTimeout(300);
   const beats = [];
-  for (let k = 0; k < 12; k++) {
+  for (let k = 0; k < 16; k++) {
     const st = await p.evaluate(() => { const el = document.getElementById('scene'); if (!el || el.hidden) return null; const box = el.querySelector('.op-box'); return { t: box.textContent, who: !!box.querySelector('.op-who'), face: !!box.querySelector('.op-who img') }; });
     if (!st) break;
     beats.push(st);

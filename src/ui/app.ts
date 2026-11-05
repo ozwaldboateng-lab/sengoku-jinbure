@@ -1094,10 +1094,10 @@ function eventBeats(st: GameState, e: BigEvent): { title: string; mood: Mood; be
     const a = ANECDOTES.find((x) => x.id === e.id)!, main = st.generals[a.who[0]];
     const loc = st.castles[main.loc], base = { at: loc?.id, zoom: 1.5, light: main.clan ? [main.clan] : [], mark: loc ? [loc.id] : [] };
     const clanOf = (id: string) => { const c = st.generals[id]?.clan; return c && st.clans[c] ? `${st.clans[c].name}家` : '在野'; };
-    const beats: OpeningBeat[] = a.beats.map((b) => b.who ? { ...b, ...base, name: st.generals[b.who]?.name ?? '', label: b.label || clanOf(b.who), text: fillNames(st, b.text) } : { ...b, ...base, head: b.head && fillNames(st, b.head), text: fillNames(st, b.text) });
+    const beats: OpeningBeat[] = a.beats.map((b) => ({ ...b, bg: b.bg ?? a.bg })).map((b) => b.who ? { ...b, ...base, name: st.generals[b.who]?.name ?? '', label: b.label || clanOf(b.who), text: fillNames(st, b.text) } : { ...b, ...base, head: b.head && fillNames(st, b.head), text: fillNames(st, b.text) });
     const gains = new Map<string, string[]>();
     for (const [id, k, n] of a.gain) gains.set(id, [...(gains.get(id) ?? []), `${STAT_NAME[k]}+${n}`]);
-    beats.push({ head: '逸話', text: `${[...gains].map(([id, xs]) => `${st.generals[id]?.name ?? ''}（${clanOf(id)}）: ${xs.join('・')}`).join('、')}`, ...base });
+    beats.push({ bg: a.bg, head: '逸話', text: `${[...gains].map(([id, xs]) => `${st.generals[id]?.name ?? ''}（${clanOf(id)}）: ${xs.join('・')}`).join('、')}`, ...base });
     return { title: `逸話 ― ${a.title}`, mood: 'peace', beats };
   }
   if (e.kind === 'tenshu') {
@@ -1122,6 +1122,12 @@ function eventBeats(st: GameState, e: BigEvent): { title: string; mood: Mood; be
   return { title: odoso ? 'お家騒動' : '謀反', mood: 'war', beats };
 }
 // 出来事の場面を順に見せ、終わったら then
+// 場面の背景の絵: from 枚目から先の、bg のない一枚に付ける（最初の一枚は地図で場所を見せることが多い）
+const withBg = (beats: OpeningBeat[], key: string, from = 1) => { beats.forEach((b, k) => { if (k >= from && !b.bg) b.bg = key; }); return beats; };
+const EVENT_BG: Partial<Record<BigEvent['kind'], [string, number]>> = {
+  katoku: ['zashiki_night', 0], ruin: ['fire_castle', 0], surrender: ['jinmaku', 1], rebel: ['zashiki_night', 1], ikki: ['mura', 1], treaty: ['zashiki_day', 1],
+  ship: ['minato', 1], mission: ['zashiki_day', 1], kan: ['gosho', 0], sponsor: ['gosho', 1], tenshu: ['ishigaki', 1],
+};
 function playEvents(st: GameState, then: () => void) {
   const evs = (st.events ?? []).splice(0);
   if (!evs.length || !eventsOn()) { then(); return; }
@@ -1129,6 +1135,7 @@ function playEvents(st: GameState, then: () => void) {
   const next = (k: number) => {
     if (k >= evs.length) { mapMood(st); refresh(); then(); return; }
     const { title, mood: m, beats } = eventBeats(st, evs[k]);
+    const eb = EVENT_BG[evs[k].kind]; if (eb) withBg(beats, eb[0], eb[1]);
     mood(m);
     playScene(view, st, title, beats, (id, w) => face(id, w), () => next(k + 1));
   };
@@ -2905,7 +2912,7 @@ function onModalClick(e: Event) {
     ninjaSel.target = '';
     if (!r || !head) { toast(msg); refresh(); if (!st.over) openMenu(); return; }
     closeModal(); refresh(); mood('somber');
-    playScene(view, st, `忍び ― ${NINJA_NAME[kind]}`, ninjaBeats(st, kind, head, tg, r, c0), (id, w) => face(id, w), () => { mapMood(st); toast(msg); refresh(); });
+    playScene(view, st, `忍び ― ${NINJA_NAME[kind]}`, withBg(ninjaBeats(st, kind, head, tg, r, c0), ({ assassinate: 'tsukiyo', rumor: 'ichi', arson: 'night_fire', spy: 'zashiki_night' } as Record<NinjaAct, string>)[kind]), (id, w) => face(id, w), () => { mapMood(st); toast(msg); refresh(); });
     return;
   }
   if (act === 'tea-do') {
@@ -2915,7 +2922,7 @@ function onModalClick(e: Event) {
     if (!g || !gs2.length) { toast('茶会を開けない'); refresh(); openMenu(); return; }
     closeModal(); refresh();
     mood('title'); // 静かな曲に
-    playScene(view, st, '茶会', teaBeats(st, g, gs2, on0), (id, w) => face(id, w), () => { mapMood(st); toast(`茶会で${gs2.length}人をもてなした`); refresh(); });
+    playScene(view, st, '茶会', withBg(teaBeats(st, g, gs2, on0), 'chashitsu'), (id, w) => face(id, w), () => { mapMood(st); toast(`茶会で${gs2.length}人をもてなした`); refresh(); });
     return;
   }
   if (act === 'fushin') { const c = st.castles[+id]; if (c && fushin(st, c)) toast(`${c.name}を改めた`); refresh(); openMenu(); return; }

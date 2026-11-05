@@ -12,6 +12,7 @@ export interface OpeningBeat {
   mark?: string[]; // 光る輪を出す城のid
   arrow?: [string, string][]; // 進軍の矢印（城のidから城のidへ）
   sound?: string; // その場面で鳴らす効果音（ゲームの途中の場面だけ）
+  bg?: string; // 背景の絵（SCENE_ART のキー。絵が届いていなければ地図のまま）。ゲームの途中の場面だけ
 }
 
 export const OPENINGS: Record<string, OpeningBeat[]> = {

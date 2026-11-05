@@ -33,6 +33,6 @@ await p.evaluate(() => window.__sengoku.anecdote('sanshi'));
 const sanshi = await walk('sanshi');
 const log = await p.evaluate(() => window.__sengoku.state.log.filter((l) => l.text.startsWith('【逸話】')).map((l) => l.text));
 console.log(JSON.stringify({ toshiie, sanshi, bra: [before, after], log, errors }, null, 1));
-const ok = toshiie.length === 5 && sanshi.length === 5 && after === Math.min(100, before + 2) && log.length === 2 && !toshiie.join('').includes('{') && !errors.length;
+const ok = toshiie.length === 10 && sanshi.length === 8 && after === Math.min(100, before + 2) && log.length === 2 && !toshiie.join('').includes('{') && !errors.length;
 console.log(ok ? 'OK' : 'NG');
 await b.close();
