@@ -253,7 +253,7 @@ function monthKiri(s: GameState) {
   for (const C of Object.values(s.clans)) {
     if (!C.alive || C.mission !== 'ban') continue;
     for (const g of baptized(s, C.id)) {
-      if (g.kin || C.leader === g.id || !['free', 'governor', 'army'].includes(g.status)) continue;
+      if (g.kin || C.leader === g.id || !['free', 'governor', 'army', 'camp'].includes(g.status)) continue;
       if (rand(s) < R.BAN_LEAVE) desert(s, g, `${g.name}は禁教を嫌い、${clanName(s, C.id)}家を去った`);
     }
   }

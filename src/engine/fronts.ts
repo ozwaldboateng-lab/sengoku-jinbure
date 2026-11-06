@@ -1,17 +1,17 @@
 // 方面軍団（プレイヤー）: 軍団長に担当の城と部隊を任せ、方針（攻略・防衛・軍備増強）に従ってAIが動かす。
 // 「軍事」を委任すると、方面に入れていない直轄の部隊と城も、家全体の方針でAIが動かす。
+import { afterCampEdit, autoJinbure, campsAt, campsOf, formCamp } from './jinbure';
 import { decideStance, enemyNear, groupAssault, localPower, moveToward, tryAttack, type AttackOpts } from './ai';
 import { aiFillCorps, attachAuto } from './corps';
 import { delegateOf } from './delegate';
-import { graphDistances, hexDist, HEXES, NEIGHBORS } from './map';
+import { graphDistances, hexDist, NEIGHBORS } from './map';
 import { armGuns, castleCom, clanIncome, gunCap, hireAshi } from './money';
 import { dueOf, kanjo, kazoCost, onOf } from './on';
 import { taxDef } from './invest';
 import type { Target } from './move';
 import { armCannon } from './nanban';
-import { formArmy } from './ops';
 import * as R from './rules';
-import { addLog, castleAt, castleDef, castleKoku, clanArmies, clanAshi, clanCastles, clanName, clanTroops, farmTroops, hostile, maxTroops, mobilizeCap, occupancy, troopMult } from './state';
+import { addLog, castleAt, castleDef, castleKoku, clanArmies, clanAshi, clanCastles, clanName, clanTroops, farmTroops, hostile, maxTroops, mobilizeCap, troopMult } from './state';
 import type { Army, Castle, Front, FrontPolicy, GameState, General } from './types';
 
 // ───────── 参照 ─────────
@@ -313,18 +313,18 @@ function organizeFront(s: GameState, f: Front, castles: Castle[], fid: number | 
   const affordable = C.food > R.NEW_ARMY_TROOPS * R.RECRUIT_COST + clanTroops(s, clan) * R.FOOD_PER_SOLDIER * 3;
   const g0 = free()[0];
   if (g0 && capLeft >= 2000 && affordable && (f.policy !== 'defend' || capLeft >= 5000)) {
-    const castle = s.castles[g0.loc], occ = occupancy(s);
-    const spot = [castle.hex, ...NEIGHBORS[castle.hex].filter((j) => s.castles[HEXES[j].d]?.owner === clan)].find((h) => !occ.has(h));
-    if (spot !== undefined) {
-      const a = formArmy(s, clan, castle, g0.id, Math.min(R.NEW_ARMY_TROOPS + 500, capLeft), spot);
-      if (a) { a.front = fid; addLog(s, `${fid === undefined ? '委任' : frontName(s, f)}: ${g0.name}隊を編成した（${a.troops.toLocaleString()}人）。`, 'info', true); }
-    }
+    const castle = s.castles[g0.loc];
+    // 平時の軍団は名簿として作る（陣触で出る）
+    const a = formCamp(s, clan, castle, g0.id, Math.min(R.NEW_ARMY_TROOPS + 500, capLeft));
+    a.front = fid; addLog(s, `${fid === undefined ? '委任' : frontName(s, f)}: ${g0.name}隊を編成した（名簿・${a.troops.toLocaleString()}人）。`, 'info', true);
   }
   // 軍団の傘下を埋める（担当の城にいる武将から）
   aiFillCorps(s, clan, (a) => isMine(a) && nearOwn(s, a), inFront);
   for (const g of free()) {
     const here = Object.values(s.armies).find((a) => a.hex === s.castles[g.loc].hex && isMine(a));
-    if (here) attachAuto(s, here, g);
+    if (here) { attachAuto(s, here, g); continue; }
+    const roster = campsAt(s, g.loc).find((a) => isMine(a));
+    if (roster && attachAuto(s, roster, g)) afterCampEdit(s, roster);
   }
   // 城主のいない城に、そこにいる武将を（魅力の高い者から）
   for (const c of castles) {
@@ -421,6 +421,12 @@ async function commandFront(s: GameState, f0: Front, fid: number | undefined, fr
   let f = fid === undefined ? f0 : policyOf(s, f0);
   const castles = f.castles.map((i) => s.castles[i]).filter((c) => c.owner === s.player);
   organizeFront(s, f, castles, fid);
+  // 陣触・陣払い: 方針が攻略なら狙う先の近くの名簿に陣触、防衛・軍備増強なら迫られたときだけ。平時は陣払い
+  {
+    const [k, v] = (f.target ?? '').split(':');
+    const tgt = f.policy === 'attack' ? (k === 'clan' ? s.castles.filter((c) => c.owner === v) : k === 'castle' ? [s.castles[+v]].filter(Boolean) : s.clans[s.player].target ? clanCastles(s, s.clans[s.player].target!) : []) : [];
+    autoJinbure(s, s.player, { policy: f.policy, camps: campsOf(s, s.player).filter((a) => a.front === fid && (fid !== undefined || !frontOfArmy(s, a))), field: clanArmies(s, s.player).filter((a) => a.front === fid && !a.ikki), targetHexes: tgt.map((c) => c.hex) });
+  }
   const armies = clanArmies(s, s.player).filter((a) => a.front === fid && !a.ikki).sort((x, y) => y.troops - x.troops);
   if (!armies.length) return;
   const leader = s.generals[f.leader];

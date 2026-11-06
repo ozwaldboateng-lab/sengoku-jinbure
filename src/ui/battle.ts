@@ -731,8 +731,8 @@ function delegate() {
 function confirmRetreat() {
   const t = tac;
   if (!t || t.over || aiRunning) return;
-  $('bt-panel').innerHTML = `<h3>退却</h3><p class="hint">全部隊が兵の8%を失って退く。合戦は負けとなり、${t.playerSide === 'A' ? '軍団は元の位置から一歩下がる' : '軍団は持ち場を捨てて退く'}。</p>
-    <div class="actions"><button class="act primary" data-bact="retreat-yes">退却する</button><button class="act" data-bact="cancel">続ける</button></div>`;
+  $('bt-panel').innerHTML = `<h3>退却</h3><p class="hint">全部隊が兵の8%を失って退く。合戦は負けとなり、${t.playerSide === 'A' ? '軍団は元の位置から一歩下がる' : t.fieldCastle !== undefined ? '軍団は城へ退いて籠城する（来月からは城攻めになる）' : '軍団は持ち場を捨てて退く'}。</p>
+    <div class="actions"><button class="act primary" data-bact="retreat-yes">${t.playerSide === 'D' && t.fieldCastle !== undefined ? '城へ退いて籠城する' : '退却する'}</button><button class="act" data-bact="cancel">続ける</button></div>`;
 }
 
 function showResult() {

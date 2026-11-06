@@ -15,7 +15,7 @@ import type { GameState, General } from './types';
 export const tsukaiLabel = (clan: string | null) => (clan && TSUKAI_LABEL[clan]) || '使番';
 export const isLeader = (s: GameState, g: General) => !!g.clan && s.clans[g.clan]?.leader === g.id;
 // 家中で働いている武将（捕虜・在野・幼少を除く）
-export const ACTIVE = ['free', 'army', 'governor', 'tsukai', 'bugyo'];
+export const ACTIVE = ['free', 'army', 'camp', 'governor', 'tsukai', 'bugyo'];
 const isActive = (g: General) => ACTIVE.includes(g.status);
 
 export function rankName(s: GameState, g: General): string {

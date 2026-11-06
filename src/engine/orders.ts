@@ -1,4 +1,5 @@
 // 出陣命令: 手番中は命令だけを出し、手番の終わりに目標ごとにまとめて開戦する
+import { decideStance } from './stance';
 import { onAttack } from './bakufu';
 import { resolveBattle } from './hooks';
 import { NEIGHBORS } from './map';
@@ -62,6 +63,7 @@ export async function resolveOrders(s: GameState, clan: string): Promise<BattleR
     }
     const primary = armies.sort((x, y) => y.troops - x.troops)[0];
     const command = group.some((o) => o.command);
+    if (t.kind === 'army') t.stance = await decideStance(s, armies, t); // 自分の城にいる守り手は、野戦か籠城かを決める
     if (t.kind === 'castle') hit.add(t.castle);
     reports.push(await resolveBattle(s, primary, t, false, armies.slice(1), command));
   }

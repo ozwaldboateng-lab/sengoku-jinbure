@@ -20,6 +20,7 @@ import { monthlyWorks } from './invest';
 import { monthlyAnecdotes } from './anecdote';
 import { runDelegation } from './delegate';
 import { ikkiOrders } from './ikki';
+import { monthCamps } from './jinbure';
 import { checkVictory } from './ops';
 import { rand } from './state';
 import type { GameState } from './types';
@@ -66,6 +67,7 @@ export async function endTurn(s: GameState) {
   s.month++;
   if (s.month > 12) { s.month = 1; s.year++; }
   s.turn++;
+  monthCamps(s); // 陣触の軍団が現れ、急ぎの陣触の残りが追いつく
   continueSieges(s); // 月をまたぐ城攻め
   karairiMonthStart(s);
   checkVictory(s);

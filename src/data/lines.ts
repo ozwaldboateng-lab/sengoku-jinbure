@@ -7,7 +7,7 @@ export type Scene =
   | 'allianceYes' | 'allianceNo' | 'marriageYes' | 'marriageNo' | 'surrenderYes' | 'surrenderNo'
   | 'plotOk' | 'plotNaio' | 'plotNg' | 'gift' | 'promote'
   | 'deathBattle' | 'deathSick' | 'succession' | 'successionYoung' | 'genpuku' | 'desert'
-  | 'envoyAlliance' | 'envoyMarriage' | 'reward' | 'kanjo' | 'leaveNeglect' | 'betray' | 'rebel' | 'testament' | 'exiled' | 'returnHead' | 'quarrel' | 'follow' | 'kan' | 'chigyo' | 'ninkan';
+  | 'envoyAlliance' | 'envoyMarriage' | 'reward' | 'kanjo' | 'leaveNeglect' | 'betray' | 'rebel' | 'testament' | 'exiled' | 'returnHead' | 'quarrel' | 'follow' | 'kan' | 'chigyo' | 'ninkan' | 'stanceAsk';
 
 export const SCENE_LABEL: Record<Scene, string> = {
   recruitYes: '登用に応じる', recruitNo: '登用を拒む', release: '解き放たれる', execute: '処断', roninYes: '仕官する', roninNo: '仕官を断る',
@@ -16,7 +16,7 @@ export const SCENE_LABEL: Record<Scene, string> = {
   plotOk: '調略の首尾', plotNaio: '内応の約束', plotNg: '調略の不首尾', gift: '下賜', promote: '取り立て',
   deathBattle: '討死', deathSick: '病没', succession: '家督相続', successionYoung: '家督相続', genpuku: '元服', desert: '出奔',
   envoyAlliance: '同盟の申し入れ', envoyMarriage: '婚姻の申し入れ',
-  reward: '加増', kanjo: '感状', leaveNeglect: '出奔', betray: '寝返り', rebel: '謀反', testament: '遺言', exiled: '追放', returnHead: '帰参を願う', quarrel: '喧嘩', follow: '去就', kan: '官の誘い', chigyo: '知行', ninkan: '任官',
+  reward: '加増', kanjo: '感状', leaveNeglect: '出奔', betray: '寝返り', rebel: '謀反', testament: '遺言', exiled: '追放', returnHead: '帰参を願う', quarrel: '喧嘩', follow: '去就', kan: '官の誘い', chigyo: '知行', ninkan: '任官', stanceAsk: '野戦か籠城か'
 };
 
 export const LINES: Record<Scene, Record<Temper, string[]>> = {
@@ -103,6 +103,12 @@ export const LINES: Record<Scene, Record<Temper, string[]>> = {
     wise: ['大勢は決した。これ以上の血は無用でござろう。', '家名を残すが当主の務め。{clan}家に従いまする。'],
     gentle: ['民と家臣を、どうかお頼み申す。', 'これも天命。{clan}家のもとで家を保ちましょう。'],
     steady: ['城と兵を差し出す。家臣の扱いだけはお頼み申す。', '承知した。これより{clan}家に臣従いたす。'],
+  },
+  stanceAsk: {
+    bold: ['城に籠もって震えておれと？ 打って出て、蹴散らしてくれましょう！', '敵は長旅で疲れておる。今こそ打って出る好機にござる！'],
+    wise: ['数を見て決めましょう。勝てぬ野戦より、守れる籠城を。', '城の守りを捨てるかどうか。ここが思案のしどころにござる。'],
+    gentle: ['兵の命を無駄にはしたくありませぬ。殿のお指図に従いまする。', '城下の民を思えば、早く追い払いたいところですが……。'],
+    steady: ['城を枕に守り抜くも、打って出て迎え撃つも、殿のご命令次第。', '後詰めが来るまで持ちこたえるか、ここで決するか。お決めくだされ。'],
   },
   surrenderNo: {
     bold: ['降れだと？ 来るなら来い、最後の一兵まで戦うてくれる！', '舐められたものよ。返事は戦場でしてやるわ。'],

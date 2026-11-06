@@ -62,7 +62,9 @@ export function pathTo(r: Reach, from: number, to: number): number[] {
   return path;
 }
 
-export type Target = { kind: 'army'; hex: number; army: Army } | { kind: 'castle'; hex: number; castle: number };
+export type Target = { kind: 'army'; hex: number; army: Army; stance?: Stance } | { kind: 'castle'; hex: number; castle: number };
+// 自分の城にいる軍団が攻められたときの構え: 野戦（城の外で迎え撃つ）か籠城か
+export type Stance = 'field' | 'rojo';
 
 export function attackTargets(s: GameState, a: Army): Target[] {
   if (a.acted || a.routed) return [];

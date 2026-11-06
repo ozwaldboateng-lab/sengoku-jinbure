@@ -7,6 +7,7 @@ import { BORN } from '../data/births';
 import { COMMERCE_BONUS, INITIAL_GUNS } from '../data/economy';
 import { CASTLE_TYPE, TSUME } from '../data/castles';
 import { scenarioOf } from '../data/scenarios';
+import { campAll } from './jinbure';
 import { clanIncome, equip, initItems, transferItem } from './money';
 import { initLife } from './life';
 import { initNanban } from './nanban';
@@ -44,7 +45,7 @@ export function migrateMap(s: GameState) {
   for (const d of FOREIGN_CLANS) if (!s.clans[d.id]) s.clans[d.id] = foreignClan(d);
 }
 
-export function newGame(player: string, difficulty: R.Difficulty, seed = (Date.now() & 0x7fffffff), scenario = '1560'): GameState {
+export function newGame(player: string, difficulty: R.Difficulty, seed = (Date.now() & 0x7fffffff), scenario = '1560', camp = true): GameState {
   const sc = scenarioOf(scenario);
   const year = sc.year, month = sc.month;
   const castles: Castle[] = CASTLE_DEFS.map((c, i) => makeCastle(i, sc.owners && c.id in sc.owners ? sc.owners[c.id] : c.owner));
@@ -172,6 +173,8 @@ export function newGame(player: string, difficulty: R.Difficulty, seed = (Date.n
     }
     clan.food = Math.round(owned.reduce((t, c) => t + castleKoku(c), 0) * 1500 + clanUpkeep(s, clan.id) * 6);
   }
+  // 平時から始まる: 全家の軍団は陣払いの名簿（本能寺の変の直後のような、戦の最中のシナリオは地図に出たまま）
+  if (camp && sc.id !== '1582') campAll(s);
   s.log.push({ turn: 1, text: `${clans[player].name}家、${year}年${month}月に起つ。`, kind: 'info', mine: true });
   return s;
 }

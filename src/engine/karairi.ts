@@ -125,6 +125,7 @@ export function setEscort(s: GameState, ids: string[]) { if (karairiOn(s)) s.kar
 // 月の終わり（兵站の前）: 李舜臣の遊撃。海を渡った兵と、渡す兵糧の一部が沈む
 // ───────── 海戦（第四段）: 李舜臣が現れたとき、水軍の将の応じ方を選ぶ ─────────
 export type NavalChoice = 'fight' | 'convoy' | 'port';
+export const YI_FATE = 0.25, YI_DEAD_SHARE = 0.6; // 海戦に勝ったとき李舜臣を討つか捕らえる見込みと、そのうち討死の割合
 export interface NavalInfo { base: number; winP: number; leader: General | null; escorts: General[]; shipped: number; abroad: number; yi: number }
 type NavalAsk = (s: GameState, info: NavalInfo) => Promise<NavalChoice>;
 let navalHook: NavalAsk | null = null;
@@ -154,7 +155,7 @@ export async function karairiMonth(s: GameState) {
     const p = K.RAID_BASE * k.yi * (1 - escortCut(s) * 0.6);
     if (rand(s) < p) await navalBattle(s, shipped, abroadN);
   }
-  k.yi = Math.min(1, k.yi + K.YI_RECOVER);
+  if (!k.yiFate) k.yi = Math.min(1, k.yi + K.YI_RECOVER);
   koreaWinter(s);
   wearyMonth(s);
 }
@@ -172,7 +173,11 @@ async function navalBattle(s: GameState, shipped: Army[], abroadN: number) {
   let cut = 0, troopCut = 0, lostShips = 0, won = false;
   if (choice === 'fight') {
     won = rand(s) < winP;
-    if (won) { cut = base * 0.25; troopCut = cut * 0.5; k.yi = Math.max(0.1, k.yi - 0.7); for (const g of es) g.merit += 40; }
+    if (won) {
+      cut = base * 0.25; troopCut = cut * 0.5; k.yi = Math.max(0.1, k.yi - 0.7); for (const g of es) g.merit += 40;
+      // 勝てば一定の割合で、李舜臣を討ち取るか捕らえる。以後、朝鮮水軍の遊撃は来ない
+      if (rand(s) < YI_FATE) { k.yiFate = rand(s) < YI_DEAD_SHARE ? 'dead' : 'captured'; k.yi = 0; if (leader) leader.merit += 100; }
+    }
     else { cut = Math.min(0.6, base * 1.5); troopCut = cut * 0.7; lostShips = Math.round(k.fleet * (0.08 + rand(s) * 0.07)); k.fleet -= lostShips; }
   } else if (choice === 'convoy') {
     cut = base * (0.6 - escortCut(s) * 0.4); troopCut = cut * 0.5;
@@ -190,6 +195,7 @@ async function navalBattle(s: GameState, shipped: Army[], abroadN: number) {
     : choice === 'convoy' ? `李舜臣の水軍が島陰から現れた。荷を守って海峡を抜けたが、運ぶ兵糧の${Math.round(cut * 100)}%${lost ? `と兵${lost.toLocaleString()}人` : ''}が沈んだ。`
     : '李舜臣の水軍が島陰に潜む。船を湊に籠もらせ、この月は海の向こうへ兵糧を送らなかった。';
   addLog(s, text, 'battle', true);
+  if (k.yiFate) { addLog(s, k.yiFate === 'dead' ? `乱戦のさなか、李舜臣が鉄砲に撃たれて倒れた。${ln}の手の者が、その首を挙げた。朝鮮水軍は将を失い、もう海峡に現れることはない。` : `${ln}の船が李舜臣の船に乗り移り、李舜臣を捕らえた。朝鮮水軍は将を失い、もう海峡に現れることはない。`, 'battle', true); return; }
   (s.scenes ??= []).push(envoyLine(s, choice === 'fight' && won ? 'yiRepelled' : choice === 'port' ? 'yiWait' : 'yiRaid', { id: 'yi_sunsin', name: '李舜臣' }));
 }
 

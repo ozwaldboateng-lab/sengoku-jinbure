@@ -44,7 +44,10 @@ export const castleAt = (s: GameState, hex: number): Castle | null => {
 export const castleKoku = (c: Castle) => c.baseKoku * c.dev;
 export const clanKoku = (s: GameState, clan: string) => clanCastles(s, clan).reduce((t, c) => t + castleKoku(c), 0);
 // 一揆勢は家の兵に数えない（兵糧も動員上限も使わない）
-export const clanTroops = (s: GameState, clan: string) => clanArmies(s, clan).reduce((t, a) => t + (a.ikki ? 0 : a.troops), 0);
+// 家の兵（動員上限と比べる数）: 出陣中の軍団と、陣払い中の名簿の兵の合計
+export const clanTroops = (s: GameState, clan: string) => fieldTroops(s, clan) + Object.values(s.camps ?? {}).reduce((t, a) => t + (a.clan === clan ? a.troops : 0), 0);
+// 出陣中（地図にいる）の兵だけ。兵糧がかかるのはこちら
+export const fieldTroops = (s: GameState, clan: string) => clanArmies(s, clan).reduce((t, a) => t + (a.ikki ? 0 : a.troops), 0);
 // 練度と足軽
 export const drillOf = (a: Army) => a.drill ?? R.DRILL_START;
 export const ashiOf = (a: Army) => Math.round(a.troops * (a.ashi ?? 0));
@@ -59,7 +62,7 @@ const TAX_CAP = { low: 1.1, mid: 1, high: 0.95 } as const; // 年貢の率と動
 export const garrisonMax = (c: Castle) => Math.round((R.GARRISON_BASE + castleKoku(c) * R.GARRISON_PER_KOKU) * R.CASTLE_KIND[c.kind ?? 'hira'].garrison * (1 + (c.fort ?? 0) * R.FORT_GARRISON));
 // 城の守りの倍率（自動決着）。詰城のある館は上乗せ
 export const castleDef = (c: Castle) => R.CASTLE_KIND[c.kind ?? 'hira'].def + (c.tsume ? R.TSUME_DEF : 0) + (c.fort ?? 0) * R.FORT_DEF;
-export const clanUpkeep = (s: GameState, clan: string) => Math.round(clanTroops(s, clan) * R.FOOD_PER_SOLDIER);
+export const clanUpkeep = (s: GameState, clan: string) => Math.round(fieldTroops(s, clan) * R.FOOD_PER_SOLDIER);
 
 export const gen = (s: GameState, id: string | null): General | null => (id ? s.generals[id] ?? null : null);
 

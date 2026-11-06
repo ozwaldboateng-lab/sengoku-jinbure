@@ -20,6 +20,7 @@ import { aiEconomy } from './money';
 import { aiNanban } from './nanban';
 import { aiCourt, deterOf } from './court';
 import { aiIkki, ikkiOrders } from './ikki';
+import { afterCampEdit, autoJinbure, campsAt, campsOf, formCamp } from './jinbure';
 import { aiBudget } from './policy';
 
 export function enemyNear(s: GameState, clan: string, hex: number, radius: number): number {
@@ -73,6 +74,7 @@ function organize(s: GameState, clan: string) {
     const castle = s.castles[g.loc];
     const occ0 = occupancy(s);
     const spot = [castle.hex, ...NEIGHBORS[castle.hex].filter((j) => s.castles[HEXES[j].d]?.owner === clan)].find((h) => !occ0.has(h));
+    if (!foreign) { formCamp(s, clan, castle, g.id, R.NEW_ARMY_TROOPS + 500); continue; } // 平時の軍団は名簿として作る（陣触で出る）
     if (spot === undefined || !formArmy(s, clan, castle, g.id, R.NEW_ARMY_TROOPS + 500, spot)) { castle.governor = g.id; g.status = 'governor'; break; }
   }
   aiFillBugyo(s, clan);
@@ -87,6 +89,7 @@ function organize(s: GameState, clan: string) {
     const capLeft = mobilizeCap(s, clan) - farmTroops(s, clan);
     const affordable = c.food > R.NEW_ARMY_TROOPS * R.RECRUIT_COST + clanTroops(s, clan) * R.FOOD_PER_SOLDIER * 3;
     if (capLeft >= 1500 && affordable) {
+      if (!foreign) { formCamp(s, clan, castle, g.id, Math.min(R.NEW_ARMY_TROOPS + 500, capLeft)); continue; } // 名簿として
       // 城か、城に隣接する自領の空きヘックスで編成
       const spot = [castle.hex, ...NEIGHBORS[castle.hex].filter((j) => s.castles[HEXES[j].d]?.owner === clan)].find((h) => !occ.has(h));
       if (spot !== undefined) {
@@ -96,6 +99,8 @@ function organize(s: GameState, clan: string) {
     }
     const here = occ.get(castle.hex);
     if (here && here.clan === clan && attachAuto(s, here, g)) continue;
+    const roster = campsAt(s, castle.i).find((a) => a.clan === clan);
+    if (roster && attachAuto(s, roster, g)) { afterCampEdit(s, roster); continue; }
     if (!castle.governor) { castle.governor = g.id; g.status = 'governor'; }
   }
 }
@@ -110,7 +115,7 @@ export function decideStance(s: GameState, clan: string) {
   const c = s.clans[clan];
   // 唐入り: 明は攻める。朝鮮は明が来るまで守り、来てからは攻めに転じる
   if (c.foreign) { c.target = s.player; c.stance = clan === 'ming' || s.clans.ming?.alive ? '攻勢' : '守勢'; return; }
-  const power = (id: string) => clanArmies(s, id).reduce((t, a) => t + a.troops * a.morale, 0) + clanCastles(s, id).reduce((t, k) => t + k.garrison * 0.5, 0);
+  const power = (id: string) => clanArmies(s, id).reduce((t, a) => t + a.troops * a.morale, 0) + campsOf(s, id).reduce((t, a) => t + a.troops * a.morale * 0.8, 0) + clanCastles(s, id).reduce((t, k) => t + k.garrison * 0.5, 0);
   const own = power(clan);
   // 隣接勢力（自城から4ヘックス以内に城を持つ）
   const d = graphDistances(clanCastles(s, clan).map((k) => k.hex));
@@ -298,6 +303,8 @@ export async function runClanAI(s: GameState, clan: string) {
   organize(s, clan);
   decideStance(s, clan);
   const stance = s.clans[clan].stance;
+  // 陣触・陣払い（攻勢なら狙う家の城の近くに陣触、迫られれば急ぎの陣触、平時は陣払い）
+  { const C = s.clans[clan]; autoJinbure(s, clan, { policy: stance === '攻勢' ? 'attack' : 'defend', camps: campsOf(s, clan), field: clanArmies(s, clan).filter((a) => !a.ikki && a.front === undefined), targetHexes: C.target ? clanCastles(s, C.target).map((k) => k.hex) : [] }); }
   const armies = clanArmies(s, clan).filter((a) => !a.ikki).sort((x, y) => y.troops - x.troops);
   const d = R.DIFFICULTY[s.difficulty];
   aiIkki(s, clan);

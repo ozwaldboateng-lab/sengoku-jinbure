@@ -503,6 +503,11 @@ export class MapView {
         ctx.strokeText(c.name, x, ty);
         ctx.fillStyle = c.owner === s.player ? '#ffe7a8' : isSealed(s, c.hex) ? 'rgba(220,215,205,0.55)' : C.white;
         ctx.fillText(c.name, x, ty);
+        // 自家の城の名簿（陣払い中の軍団）の数: 城名の下に小さく「名簿2」
+        if (c.owner === s.player) {
+          const n = Object.values(s.camps ?? {}).filter((a) => a.camp === c.i).length;
+          if (n) { ctx.save(); ctx.font = `600 ${fs * 0.78}px ${FONT}`; ctx.strokeText(`名簿${n}`, x, ty + fs * 1.05); ctx.fillStyle = '#c9b98a'; ctx.fillText(`名簿${n}`, x, ty + fs * 1.05); ctx.restore(); }
+        }
         // 鉱山の印（金・銀・銅）
         const mk = MINE_MARK.get(c.id);
         if (mk) {

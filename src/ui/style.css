@@ -645,3 +645,12 @@ body.in-scene .bar, body.in-scene .side, body.in-scene .mapctl, body.in-scene .m
 body.in-scene .stage { grid-template-columns: minmax(0, 1fr); }
 body.in-scene .mapwrap { height: 100vh; height: 100dvh; }
 body.in-scene #map { filter: saturate(0.75) brightness(0.72) sepia(0.15); pointer-events: none; }
+
+/* 陣立て */
+.jin-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.jin-pick select { max-width: 100%; }
+.jin-form { border: 1px solid var(--line, rgba(200, 170, 110, 0.35)); border-radius: 8px; padding: 8px 10px; margin: 6px 0 10px; }
+.jin-form .sect-h { margin-top: 0; }
+.jin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px 10px; }
+.jin-grid label { display: flex; flex-direction: column; gap: 2px; font-size: 0.92em; }
+.jin-grid select { width: 100%; }

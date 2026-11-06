@@ -18,7 +18,9 @@ interface Side { troops: number; morale: number; atk: number; def: number; rout:
 const retreatAt = (x: Side) => R.RETREAT_MORALE + (x.rout - R.ROUT_BASE);
 const routAt = (x: Side) => R.ROUT_MORALE + (x.rout - R.ROUT_BASE);
 
-const defMultAt = (s: GameState, hex: number) => { const c = castleAt(s, hex); return c ? castleDef(c) : R.DEF_MULT[HEXES[hex].t]; };
+const defMultAt = (s: GameState, hex: number, field = false) => { const c = castleAt(s, hex); return c && !field ? castleDef(c) : R.DEF_MULT[HEXES[hex].t]; };
+// 野戦（自分の城の外で迎え撃つ）か: 守り手の軍団が自分の城のマスにいて、野戦を選んだとき
+export const isFieldAtCastle = (t: Target) => t.kind === 'army' && t.stance === 'field';
 
 // 目標に隣接する味方（同じ家の軍団と、同盟を結んだAIの軍団＝援軍）
 export function supportArmies(s: GameState, a: Army, defHex: number, defClan: string | null = null): Army[] {
@@ -61,10 +63,11 @@ function attackMods(s: GameState, a: Army, defHex: number, charge: boolean): num
 function defenderSide(s: GameState, t: Target): { side: Side; garrisonSupport: number; castle: Castle | null; army: Army | null } {
   if (t.kind === 'army') {
     const d = t.army;
-    const c = castleAt(s, d.hex);
-    const gs = c && c.owner === d.clan ? c.garrison * R.GARRISON_STATS.atk * c.gMorale * R.GARRISON_SUPPORT : 0;
+    const c = castleAt(s, d.hex), field = t.stance === 'field';
+    // 野戦なら城兵は城を守ったまま（打って出る分だけ半分の加勢）、城の崩れにくさもない
+    const gs = c && c.owner === d.clan ? c.garrison * R.GARRISON_STATS.atk * c.gMorale * R.GARRISON_SUPPORT * (field ? R.FIELD_GARRISON : 1) : 0;
     const cb = armyCombat(s, d);
-    const rout = cb.rout + (c ? R.CASTLE_ROUT : HEXES[d.hex].t === 'R' ? R.WET_ROUT : 0);
+    const rout = cb.rout + (c && !field ? R.CASTLE_ROUT : HEXES[d.hex].t === 'R' ? R.WET_ROUT : 0);
     return { side: { troops: d.troops, morale: d.morale, atk: cb.atk, def: cb.def, rout, int: armyStats(s, d).int }, garrisonSupport: gs, castle: c, army: d };
   }
   const c = s.castles[t.castle];
@@ -80,7 +83,7 @@ export function estimate(s: GameState, a: Army, t: Target, charge: boolean, bias
   const defClan = t.kind === 'army' ? t.army.clan : s.castles[t.castle].owner;
   const dsup = defenderSupports(s, defClan, t.hex, a.clan, t.kind === 'army' ? t.army.id : null).reduce((x, o) => x + R.FLANK_SUPPORT * o.troops * o.morale, 0);
   const sd = def.side.troops * def.side.morale + def.garrisonSupport / R.GARRISON_STATS.atk + dsup;
-  const ratio = sa / (sa + sd * defMultAt(s, t.hex));
+  const ratio = sa / (sa + sd * defMultAt(s, t.hex, isFieldAtCastle(t)));
   return Math.min(1, ratio + bias);
 }
 
@@ -93,7 +96,7 @@ export function groupEstimate(s: GameState, armies: Army[], t: Target, bias = 0)
   const sa = armies.reduce((x, a) => x + a.troops * a.morale * attackMods(s, a, t.hex, false), 0) + allies;
   const dsup = defenderSupports(s, defClan, t.hex, lead.clan, t.kind === 'army' ? t.army.id : null).reduce((x, o) => x + R.FLANK_SUPPORT * o.troops * o.morale, 0);
   const sd = def.side.troops * def.side.morale + def.garrisonSupport / R.GARRISON_STATS.atk + dsup;
-  return Math.min(1, sa / (sa + sd * defMultAt(s, t.hex)) + bias);
+  return Math.min(1, sa / (sa + sd * defMultAt(s, t.hex, isFieldAtCastle(t))) + bias);
 }
 
 export function battle(s: GameState, a: Army, t: Target, charge: boolean, joined: Army[] = []): BattleReport {
@@ -119,6 +122,7 @@ export function battle(s: GameState, a: Army, t: Target, charge: boolean, joined
   const dSupports = defenderSupports(s, defClan, defHex, a.clan, t.kind === 'army' ? t.army.id : null);
   const dSupportPower = dSupports.reduce((x, o) => x + R.FLANK_SUPPORT * armyCombat(s, o).atk * o.morale * o.troops, 0);
   const events: string[] = [];
+  if (t.kind === 'army' && t.stance) events.push(t.stance === 'field' ? `${s.generals[t.army.main].name}隊は城を出て野戦で迎え撃った` : `${s.generals[t.army.main].name}隊は城に籠もった`);
   const occ = occupancy(s);
 
   // 側面・包囲による士気低下
@@ -138,7 +142,7 @@ export function battle(s: GameState, a: Army, t: Target, charge: boolean, joined
   const autoFire = !!cas && (A.int >= R.AUTO_FIRE_INT || (ninjaA && rand(s) >= ninjaD));
   if (ninjaA && rand(s) < R.NINJA_SNEAK - ninjaD) { D.morale -= R.NINJA_SNEAK_MORALE; events.push('忍びが石垣を越えて城門を内から開けた'); }
   const cannon = cas ? attackers.reduce((x, o) => x + (o.cannon ?? 0), 0) : 0;
-  const defMult0 = defMultAt(s, defHex);
+  const defMult0 = defMultAt(s, defHex, isFieldAtCastle(t));
   const defMult = cannon ? 1 + (defMult0 - 1) * Math.max(0.4, 1 - R.CANNON_DEF * cannon) : defMult0;
   if (cannon) { D.morale -= Math.min(0.2, R.CANNON_MORALE * cannon); events.push(`大筒${cannon}門で城を撃った`); }
   const inCastle = !!castleAt(s, defHex);
@@ -245,7 +249,12 @@ export function battle(s: GameState, a: Army, t: Target, charge: boolean, joined
     ikkiCasualty(s, d, dBefore - d.troops);
     deathCheck(a, true);
     deathCheck(d, false);
-    if (s.armies[d.id] && dBroke) resolveBroken(d, a.clan, a.hex, D);
+    if (s.armies[d.id] && dBroke && isFieldAtCastle(t) && D.troops > 0 && castleAt(s, d.hex)?.owner === d.clan) {
+      // 野戦に敗れたら、城へ退いて籠城する（敗走で兵は減るが、城を捨てはしない）
+      if (D.morale < routAt(D)) d.troops = Math.round(d.troops * (1 - R.ROUT_EXTRA_LOSS));
+      d.morale = Math.max(d.morale, R.ROJO_MORALE); d.routed = false; d.rojo = s.turn;
+      events.push(`${s.generals[d.main].name}隊は城へ退いて籠城した`);
+    } else if (s.armies[d.id] && dBroke) resolveBroken(d, a.clan, a.hex, D);
     for (const x of attackers) {
       if (!s.armies[x.id]) continue;
       if (A.morale < routAt(A)) resolveBroken(x, d.clan, defHex, { ...A, troops: x.troops });
@@ -366,7 +375,13 @@ export function applyTactical(s: GameState, t: Tactical): BattleReport {
   };
   const fromHex = a0?.hex ?? t.hex;
   if (attackerWon) {
-    for (const id of t.armiesD) { const d = s.armies[id]; if (d) fallBack(d, atkClan, fromHex); }
+    for (const id of t.armiesD) {
+      const d = s.armies[id];
+      if (!d) continue;
+      // 城の前の野戦に敗れたら、城へ退いて籠城する
+      if (t.fieldCastle !== undefined && d.hex === t.hex && s.castles[t.fieldCastle].owner === d.clan) { d.morale = Math.max(d.morale, R.ROJO_MORALE); d.routed = false; d.rojo = s.turn; events.push(`${s.generals[d.main].name}隊は城へ退いて籠城した`); continue; }
+      fallBack(d, atkClan, fromHex);
+    }
   } else if (defenderWon) {
     for (const id of t.armiesA) { const x = s.armies[id]; if (x && (x.routed || id === t.primaryA)) fallBack(x, defClan, t.hex); }
   }

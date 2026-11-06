@@ -2,7 +2,7 @@
 // 合流の大将: 身分の高いほう（下の身分は上の身分を傘下に置けないため）。同じ身分なら 当主 → 方面軍団長 → 一門 → 統率 → 功績 の順
 // 面目: 同じ身分で功績の多い者が大将を譲れば恩−5。不仲: 大将と不仲の者が傘下に入れば双方の恩−10
 import { bondOf } from './bushi';
-import { attachAuto, directOf, levelOf, staffOf, treeOf } from './corps';
+import { attachAuto, directOf, leaveArmy, levelOf, staffOf, treeOf } from './corps';
 import { isCrossing } from './karairi';
 import { NEIGHBORS, hexDist as hexDistance, isForeignHex } from './map';
 import { nearestOwnCastle } from './ops';
@@ -206,3 +206,52 @@ export function reshuffleAt(s: GameState, castleHex: number, clan: string): { ar
   return { armies: here.length, moved };
 }
 const hexDistOf = (a: number, b: number) => hexDistance(a, b);
+
+// ───────── 陣立て: 主将の交代と、傘下を外す ─────────
+// 主将を替えられるか（理由。null ならできる）。新しい主将は待機中の武将か、この軍団の傘下の武将
+export function replaceBlock(s: GameState, a: Army, g: General): string | null {
+  if (a.ikki) return '一揆勢は編成できない';
+  if (a.routed) return '潰走中は編成できない';
+  if (!nearOwnCastle(s, a)) return '自城か、その隣にいるときだけ';
+  if ((s.orders ?? []).some((o) => o.army === a.id)) return '出陣を命じた軍団は編成を変えられない';
+  if (g.id === a.main) return 'すでに主将';
+  if (g.clan !== a.clan) return '自家の武将だけ';
+  if (!(g.status === 'free' && !g.liege) && g.army !== a.id) return '待機中の武将か、この軍団の傘下だけ';
+  return null;
+}
+// 主将を替える: 新しい主将の下に、元の主将を含む全員を身分の高い順に置き直す。入らない者は城で待機。兵が上限を超えれば村へ帰す
+export function replaceMain(s: GameState, a: Army, g: General, loc: number): { left: string[]; cut: number } | null {
+  if (replaceBlock(s, a, g)) return null;
+  const members = treeOf(s, a).map((x) => x.g).filter((x) => x.id !== g.id);
+  const oldMain = s.generals[a.main];
+  for (const m of members) { m.army = null; m.boss = undefined; m.status = 'free'; }
+  a.staff = []; a.deputy = null;
+  a.main = g.id; g.status = 'army'; g.army = a.id; g.boss = undefined;
+  for (const c of s.castles) if (c.governor === g.id) c.governor = null;
+  members.sort((x, y) => cmp(rankKey(s, x), rankKey(s, y)));
+  const left: string[] = [];
+  for (const m of members) if (!attachAuto(s, a, m)) { m.loc = loc; left.push(m.id); }
+  const cap = maxTroops(s, a), cut = Math.max(0, a.troops - cap);
+  if (cut) { a.troops = cap; a.departTroops = Math.min(a.departTroops, cap); }
+  addLog(s, `${g.name}が${oldMain.name}に代わって軍団の主将となった。${left.length ? `${left.map((id) => s.generals[id].name).join('・')}は城で待機。` : ''}${cut ? `兵${cut.toLocaleString()}人は村へ帰った。` : ''}`, 'info', a.clan === s.player);
+  return { left, cut };
+}
+// 傘下の武将を外して城で待機させる（その下の者は一段上へ繰り上がる。入らない者は一緒に待機）
+export function dismissBlock(s: GameState, a: Army, g: General): string | null {
+  if (a.ikki) return '一揆勢は編成できない';
+  if (!nearOwnCastle(s, a)) return '自城か、その隣にいるときだけ';
+  if ((s.orders ?? []).some((o) => o.army === a.id)) return '出陣を命じた軍団は編成を変えられない';
+  if (g.id === a.main) return '主将は外せない（主将を替える）';
+  if (g.army !== a.id) return 'この軍団にいない';
+  return null;
+}
+export function dismiss(s: GameState, a: Army, g: General, loc: number): { out: string[]; cut: number } | null {
+  if (dismissBlock(s, a, g)) return null;
+  const detached: General[] = [];
+  leaveArmy(s, g, detached);
+  const out = [g, ...detached];
+  for (const x of out) { x.status = 'free'; x.army = null; x.boss = undefined; x.loc = loc; }
+  const cap = maxTroops(s, a), cut = Math.max(0, a.troops - cap);
+  if (cut) { a.troops = cap; a.departTroops = Math.min(a.departTroops, cap); }
+  return { out: out.map((x) => x.id), cut };
+}

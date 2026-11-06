@@ -9,6 +9,7 @@ export interface KarairiWar {
   escort: string[]; // 渡海の道を守る水軍の将
   foodLeft?: number; // この月にまだ海を渡せる兵糧（石）
   yi: number; // 李舜臣の水軍の勢い（0〜1。撃退されると下がり、月ごとに戻る）
+  yiFate?: 'dead' | 'captured'; // 海戦に勝ったとき、李舜臣が討死・捕縛されたか（以後、遊撃は来ない）
   raid?: { turn: number; zone: string; sunk: number; troops: number; repelled: boolean; cut?: number; choice?: 'fight' | 'convoy' | 'port'; lostShips?: number; leader?: string } | null; // この月の襲撃（cut: 送った兵糧の沈む割合、sunk: 沈んだ石）
   raids: number; // これまでの襲撃の数
   mingTurn?: number; // 明が援軍を出した月
@@ -46,7 +47,7 @@ export interface Castle {
   store?: number; // 城の蔵（籠城の備えの兵糧、石）。飛び地では収穫もここに入る
 }
 
-export type GeneralStatus = 'free' | 'army' | 'governor' | 'captive' | 'dead' | 'ronin' | 'young' | 'tsukai' | 'bugyo';
+export type GeneralStatus = 'free' | 'army' | 'camp' | 'governor' | 'captive' | 'dead' | 'ronin' | 'young' | 'tsukai' | 'bugyo'; // camp: 陣払い中の軍団（名簿）に属し、城にいる
 export interface General {
   id: string; name: string; clan: string | null;
   bra: number; int: number; lea: number; cha: number;
@@ -86,6 +87,11 @@ export interface Army {
   guns?: number; // 持たせた鉄砲（合戦では鉄砲隊になる）
   food?: number; // 小荷駄（携行兵糧、月数）。補給下なら満ち、補給切れで減る
   ikki?: { castle: number; until: number }; // 一向一揆（蜂起した城と、散るターン）
+  rojo?: number; // 野戦に敗れて城へ退き、籠城を始めたターン（その月と翌月は籠城のまま）
+  camp?: number; // 陣払い中なら、名簿を置く城（s.camps に入っていて地図には出ない）
+  muster?: number; // 陣触を出した軍団が地図に現れるターン（それまでは名簿のまま）
+  musterLeft?: number; // 急ぎの陣触で、まだ集まっていない兵（翌月に追いつく）
+  musterTurn?: number; // 地図に現れたターン（すぐ陣払いしないように）
   staff?: string[]; // 主将の下の武将（主将を除く。上下は General.boss）
   drill?: number; // 練度 0〜100（なければ50）
   ashi?: number; // 兵のうち足軽（常備兵）の割合 0〜1
@@ -184,6 +190,8 @@ export interface GameState {
   returnOffer?: { gen: string; turn: number } | null; // 追放した者が勝手に戦に加わって帰参を願う
   quarrel?: { gen: string; victim: string; killed: boolean; turn: number } | null; // 家臣の喧嘩の裁き
   anecdotes?: string[]; // 起きた逸話
+  musterNews?: { clan: string; castle: number; troops: number; turn: number }[]; // 最近出た陣触（AIが備えに使う）
+  camps?: Record<number, Army>; // 陣払い中の軍団（名簿）。地図には出ず、兵糧もかからない
   events?: BigEvent[]; // 月の終わりに場面で見せる大きな出来事（家督相続・滅亡・降伏・謀反）。評定終了ごとに空にする
   scenes?: import('./lines').SceneLine[]; // 月の報告に出す顔見せ（評定終了ごとに空にする）
   missions?: Record<string, { home: string | null; next: number }>; // 宣教師: 身を寄せる家と次に動くターン

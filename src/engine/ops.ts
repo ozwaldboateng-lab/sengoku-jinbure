@@ -77,6 +77,7 @@ export function succession(s: GameState, clanId: string) {
 
 // 軍団から抜ける。継ぐ者がいなければ軍団を解く
 function quitArmy(s: GameState, g: General) {
+  if (g.status === 'camp') { g.army = null; g.boss = undefined; return; } // 陣払い中の名簿は月の処理で整える（syncCamps）
   const a = g.army !== null ? s.armies[g.army] : undefined;
   if (!a) { g.army = null; return; }
   const off: General[] = [];

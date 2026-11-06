@@ -120,6 +120,7 @@ export function absorb(s: GameState, winner: string, loser: string) {
   const leaderId = L.leader;
   for (const c of s.castles) if (c.owner === loser) c.owner = winner;
   for (const a of Object.values(s.armies)) if (a.clan === loser) a.clan = winner;
+  for (const a of Object.values(s.camps ?? {})) if (a.clan === loser) a.clan = winner; // 陣払い中の名簿も移る
   // 蔵の兵糧・金・鉄砲もそのまま移る
   const W = s.clans[winner];
   const got = { food: Math.max(0, Math.round(L.food)), gold: Math.max(0, Math.round(L.gold)), guns: Math.max(0, L.guns) };
@@ -134,7 +135,7 @@ export function absorb(s: GameState, winner: string, loser: string) {
   }
   s.treaties = s.treaties.filter((t) => t.a !== loser && t.b !== loser);
   // 名物は持たせたまま移る
-  for (const it of clanItems(s, loser)) { const h = it.holder; transferItem(s, it, winner); if (h) equip(s, s.generals[h], it, true); }
+  for (const it of clanItems(s, loser)) { const h = it.holder; transferItem(s, it, winner); if (h && s.generals[h]) equip(s, s.generals[h], it, true); }
   addLog(s, `${L.name}家が${clanName(s, winner)}家に降った。`, 'castle', true);
   // 当家に降った家は本領安堵: 当主が城持ちに、家臣はその陪臣に、蔵の兵糧と金は領の蔵に（鉄砲は当家の蔵へ）
   const f = toPlayer ? enfeoffSurrendered(s, loser, castles, gens, got, leaderId) : null;

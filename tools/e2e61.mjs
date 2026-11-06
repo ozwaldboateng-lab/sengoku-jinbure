@@ -1,0 +1,22 @@
+// 野戦か籠城か: 直轄の城に敵が迫ったときの札（見込み・おすすめ・武将の一言）と、選んだ構えが返ること
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { chromium } = require('/opt/node-tools/node_modules/playwright');
+const out = process.argv[2], mobile = process.argv[3] === 'mobile', sfx = mobile ? '-m' : '';
+const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const p = await b.newPage(mobile ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1360, height: 820 } });
+const errors = [];
+p.on('pageerror', (e) => errors.push('pageerror ' + e.message));
+await p.goto('file://' + process.cwd() + '/dist/index.html'); await p.waitForTimeout(400);
+await p.click('[data-act="t-new"]'); await p.click('[data-act="pick-scen"][data-id="1560"]'); await p.click('[data-act="pick-clan"][data-id="oda"]');
+await p.click('[data-act="start"]'); await p.waitForTimeout(300);
+for (let k = 0; k < 4; k++) if (await p.$('#modal:not([hidden])')) await p.click('#modal-close').catch(() => {});
+const cid = await p.evaluate(() => { const s = window.__sengoku.state; const a = Object.values(s.armies).find((x) => x.clan === 'oda'); return s.castles.find((c) => c.hex === a.hex)?.id; });
+await p.evaluate((id) => window.__sengoku.stanceAsk(id), cid); await p.waitForTimeout(300);
+const card = await p.evaluate(() => ({ title: document.getElementById('modal-title')?.textContent, opts: [...document.querySelectorAll('[data-act="stance"] b')].map((x) => x.textContent), quote: !!document.querySelector('#modal-body .quote, #modal-body .pitch-big, #modal-body img.face') }));
+await p.screenshot({ path: `${out}/61-stance${sfx}.png` });
+await p.click('[data-act="stance"][data-id="field"]'); await p.waitForTimeout(200);
+const picked = await p.evaluate(() => window.__stance);
+console.log(JSON.stringify({ cid, card, picked, errors }, null, 1));
+console.log(card.opts.length === 2 && card.opts.some((x) => x.includes('おすすめ')) && picked === 'field' && !errors.length ? 'OK' : 'NG');
+await b.close();

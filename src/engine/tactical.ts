@@ -86,6 +86,7 @@ export interface Tactical {
   attackerClan: string; defenderClan: string | null;
   horse?: string[]; // 馬の産地を持つ家（突撃の自軍の損害が減る）
   primaryA: number; primaryD: number | null; castle: number | null; hex: number;
+  fieldCastle?: number; // 守り手が自分の城の前で野戦を選んだ城（敗れれば城へ退いて籠城する）
   armiesA: number[]; armiesD: number[];
   log: string[]; deaths: string[]; captures: { general: string; by: string }[];
   start: Record<number, number>; // 開始時の兵数（部隊id）
@@ -250,7 +251,8 @@ function genSiege(s: GameState, t: Tactical, cx: number, cy: number) {
 
 export function createTactical(s: GameState, a: Army, target: Target, playerSide: Side | null, joined: Army[] = []): Tactical {
   const defHex = target.hex;
-  const castle = castleAt(s, defHex);
+  const field = target.kind === 'army' && target.stance === 'field'; // 守り手が城の外で迎え撃つ（野戦の盤面）
+  const castle = field ? undefined : castleAt(s, defHex);
   const save = castle ? s.sieges?.[castle.i] : undefined;
   if (castle && save && save.clan === a.clan) return resumeSiege(s, save, a, joined, playerSide);
   const kind: Tactical['kind'] = castle ? 'siege' : 'field';
@@ -263,7 +265,7 @@ export function createTactical(s: GameState, a: Army, target: Target, playerSide
     kind, w, h, tiles: genField(s, w, h, HEXES[defHex].t), gates: {}, fire: {}, gateMax: castle ? Math.round((800 + castleKoku(castle) * 60) * R.CASTLE_KIND[castle.kind ?? 'hira'].gate * (1 + (castle.fort ?? 0) * R.FORT_GATE) * (govTrait(s, castle) === 'chikujo' ? CHIKUJO_GATE : 1)) : 0,
     units: [], turn: 1, maxTurn: kind === 'siege' ? TR.SIEGE_TURNS + (big ? 5 : 0) : TR.FIELD_TURNS, phase: 'A',
     attackerClan: a.clan, defenderClan: defClan, primaryA: a.id, primaryD: target.kind === 'army' ? target.army.id : null,
-    castle: castle?.i ?? null, hex: defHex, armiesA: [], armiesD: [], log: [], deaths: [], captures: [], start: {},
+    castle: castle?.i ?? null, hex: defHex, fieldCastle: field ? castleAt(s, defHex)?.i : undefined, armiesA: [], armiesD: [], log: [], deaths: [], captures: [], start: {},
     over: null, reason: '', playerSide, cmd: { A: null, D: null },
     fog: kind === 'field', seen: { A: {}, D: {} }, scouts: { A: { left: 0, max: 0 }, D: { left: 0, max: 0 } }, scoutAreas: [],
   };

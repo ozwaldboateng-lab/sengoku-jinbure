@@ -6,7 +6,7 @@ import * as R from './rules';
 import { addLog } from './state';
 import type { Castle, GameState, General } from './types';
 
-const ACTIVE = ['free', 'army', 'governor', 'bugyo', 'tsukai'];
+const ACTIVE = ['free', 'army', 'camp', 'governor', 'bugyo', 'tsukai'];
 const bump = (g: General, v: number) => { g.on = Math.max(0, Math.min(100, onOf(g) + v)); };
 const fame = (g: General, v: number) => { g.fame = Math.max(0, Math.min(100, (g.fame ?? 0) + v * Math.max(0.1, 1 - (g.fame ?? 0) / 110))); };
 // 当家の直参で、役目に就ける者か

@@ -61,12 +61,13 @@ export function ikkiCasualty(s: GameState, a: Army, lost: number) {
   const k = lost / 1000;
   c.dev = Math.max(0.7, c.dev - R.IKKI_DEV_LOSS * k);
   c.chian = Math.max(0, c.chian - R.IKKI_CHIAN_LOSS * k);
-  addLog(s, `${c.name}: 一揆勢を討ち、領内が荒れた（開発−${Math.round(R.IKKI_DEV_LOSS * k * 100)}%・治安−${Math.round(R.IKKI_CHIAN_LOSS * k)}）。`, 'econ', c.owner === s.player);
+  addLog(s, `${c.name}: ${a.clan === 'joseon' ? '義兵' : '一揆勢'}を討ち、領内が荒れた（開発−${Math.round(R.IKKI_DEV_LOSS * k * 100)}%・治安−${Math.round(R.IKKI_CHIAN_LOSS * k)}）。`, 'econ', c.owner === s.player);
 }
 
 // 一揆の頭は仮の武将: 軍団が消えれば一緒に消す
 export function dropIkkiLeader(s: GameState, a: Army) {
   const g = s.generals[a.main];
+  if (g && !g.ikki) { if (g.status === 'army') g.status = 'free'; g.army = null; return; } // 名のある大将（義兵の将など）は残る
   if (!g?.ikki) return;
   delete s.generals[g.id];
   // 判明した敵将の一覧などに名が残らないように
@@ -77,7 +78,7 @@ export function dropIkkiLeader(s: GameState, a: Army) {
 export function monthIkki(s: GameState, remove: (a: Army) => void) {
   for (const a of Object.values(s.armies)) {
     if (!a.ikki) continue;
-    if (s.turn >= a.ikki.until) { addLog(s, `${s.castles[a.ikki.castle].name}の一揆は散った。`, 'info', s.castles[a.ikki.castle].owner === s.player || a.clan === s.player); remove(a); continue; }
+    if (s.turn >= a.ikki.until) { addLog(s, `${s.castles[a.ikki.castle].name}の${a.clan === 'joseon' ? '義兵' : '一揆'}は散った。`, 'info', s.castles[a.ikki.castle].owner === s.player || a.clan === s.player); remove(a); continue; }
     a.acted = true; a.mp = 0;
   }
 }

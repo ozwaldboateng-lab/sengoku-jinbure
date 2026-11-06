@@ -40,6 +40,10 @@ export const atkOf = (bra: number, lea: number) => 0.5 + (0.6 * bra + 0.4 * lea)
 export const defOf = (lea: number, int: number, cha: number) => 0.5 + (0.6 * lea + 0.2 * int + 0.2 * cha) / 100;
 export const routOf = (lea: number, cha: number) => 0.6 - (0.2 * cha + 0.1 * lea) / 100;
 export const GARRISON_STATS = { atk: 0.8, def: 1.0, rout: 0.3 }; // 武将なしの城兵（逃げ場がなく粘る）
+export const FIELD_GARRISON = 0.5; // 野戦で城兵が打って出て加勢する割合（籠城なら全員）
+export const ROJO_MORALE = 0.4; // 野戦に敗れて城へ退いたときの士気の下限
+export const FIELD_VS_ROJO = 0.85; // 野戦の見込みが籠城の見込みのこの割合以上なら、野戦を選ぶ（自動）
+export const FIELD_PICK = 0.5; // 自動で野戦を選ぶ見込み（野戦で守り手が勝つ見込みがこれ以上なら打って出る）
 export const ROUT_BASE = 0.4; // 平均的な壊乱閾値。自動決着ではここからの差で退却・壊乱の線をずらす
 export const MONTO_ROUT = -0.1; // 門徒結束
 export const CASTLE_ROUT = -0.1; // 籠城中の軍団

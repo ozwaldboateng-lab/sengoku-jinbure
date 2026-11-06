@@ -52,7 +52,7 @@ export function refuse(s: GameState, g: General, clan: string) {
 // AI（と人事を委任したプレイヤー）: 金に余裕があり、武将が足りていなければ召し抱える
 function aiConsider(s: GameState, g: General, clan: string) {
   const C = s.clans[clan];
-  const active = Object.values(s.generals).filter((x) => x.clan === clan && ['free', 'army', 'governor', 'tsukai', 'bugyo'].includes(x.status)).length;
+  const active = Object.values(s.generals).filter((x) => x.clan === clan && ['free', 'army', 'camp', 'governor', 'tsukai', 'bugyo'].includes(x.status)).length;
   const want = active < clanCastles(s, clan).length * 4 + 6 || fame(g) >= R.RONIN_FAME_SAMURAI;
   if (want && C.gold >= R.RONIN_GOLD + R.PLOT_GOLD) hire(s, g, clan);
   else refuse(s, g, clan);

@@ -9,7 +9,7 @@ import * as R from './rules';
 import { addLog, castleKoku, clanArmies, clanCastles, clanName, hostile, rand } from './state';
 import type { Army, Castle, Clan, Front, GameState, General } from './types';
 
-const ACTIVE = ['free', 'army', 'governor', 'bugyo', 'tsukai'];
+const ACTIVE = ['free', 'army', 'camp', 'governor', 'bugyo', 'tsukai'];
 export const onOf = (g: General) => g.on ?? R.ON_START;
 export const dueOf = (g: General) => Math.max(0, Math.round(g.merit - (g.paid ?? g.merit)));
 export const isLord = (s: GameState, g: General) => !!g.clan && s.clans[g.clan]?.leader === g.id;
@@ -133,6 +133,7 @@ function betray(s: GameState, c: Castle, g: General, to: string) {
 
 // 家が割れる: g が城と部隊を率いて新しい家を立てる（方面軍団の謀反・お家騒動）
 export function splitClan(s: GameState, g: General, from: string, castles: number[], armies: Army[], why: string): string | null {
+  armies = [...armies, ...Object.values(s.camps ?? {}).filter((a) => a.clan === from && a.camp !== undefined && castles.includes(a.camp))]; // 離れる城の名簿の軍団も一緒に
   const base = g.name.slice(0, 2);
   const name = Object.values(s.clans).some((c) => c.name === base && c.alive) ? g.name : base;
   const id = `reb_${g.id}_${s.turn}`;
