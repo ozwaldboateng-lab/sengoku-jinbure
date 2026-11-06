@@ -8,6 +8,7 @@ import { MINATO_ART } from '../data/scenes';
 const ART = (k: string) => SCENE_ART[k] ?? (k === 'minato' ? MINATO_ART : undefined); // 湊は幕間の絵を借りる
 
 const esc = (x: string) => x.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+let anim = 0; // 地図を寄せるアニメーションの番号（新しく寄せるか場面を閉じると、前のアニメーションは止まる）
 let playing: { beats: OpeningBeat[]; i: number; view: MapView; st: GameState; title: string; face: (id: string, w: number) => string; done: () => void; keep: { scale: number; ox: number; oy: number; highlight: MapView['highlight']; marks: MapView['marks'] } } | null = null;
 export const sceneOpen = () => !!playing;
 
@@ -48,7 +49,7 @@ function art(key: string | undefined) {
 }
 function end() {
   const p = playing; if (!p) return;
-  playing = null;
+  playing = null; anim++; // 予約済みのアニメーションの一コマが、元に戻した地図を動かさないように
   art(undefined);
   document.getElementById('scene')!.hidden = true;
   document.body.classList.remove('in-scene');
@@ -71,8 +72,8 @@ function apply(instant: boolean) {
   v.invalidate();
   if (instant || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   Object.assign(v, from);
-  const t0 = performance.now(), D = 700;
-  const step = () => { const k = Math.min(1, (performance.now() - t0) / D), e = 1 - Math.pow(1 - k, 3); v.scale = from.scale + (to.scale - from.scale) * e; v.ox = from.ox + (to.ox - from.ox) * e; v.oy = from.oy + (to.oy - from.oy) * e; v.redraw(); if (k < 1 && playing) requestAnimationFrame(step); };
+  const t0 = performance.now(), D = 700, my = ++anim;
+  const step = () => { if (my !== anim || !playing) return; const k = Math.min(1, (performance.now() - t0) / D), e = 1 - Math.pow(1 - k, 3); v.scale = from.scale + (to.scale - from.scale) * e; v.ox = from.ox + (to.ox - from.ox) * e; v.oy = from.oy + (to.oy - from.oy) * e; v.redraw(); if (k < 1 && playing) requestAnimationFrame(step); };
   requestAnimationFrame(step);
 }
 function draw() {

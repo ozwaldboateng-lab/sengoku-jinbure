@@ -20,7 +20,7 @@ import { aiEconomy } from './money';
 import { aiNanban } from './nanban';
 import { aiCourt, deterOf } from './court';
 import { aiIkki, ikkiOrders } from './ikki';
-import { afterCampEdit, autoJinbure, campsAt, campsOf, formCamp } from './jinbure';
+import { afterCampEdit, AUTO, autoJinbure, campsAt, campsOf, formCamp } from './jinbure';
 import { aiBudget } from './policy';
 
 export function enemyNear(s: GameState, clan: string, hex: number, radius: number): number {
@@ -304,7 +304,11 @@ export async function runClanAI(s: GameState, clan: string) {
   decideStance(s, clan);
   const stance = s.clans[clan].stance;
   // 陣触・陣払い（攻勢なら狙う家の城の近くに陣触、迫られれば急ぎの陣触、平時は陣払い）
-  { const C = s.clans[clan]; autoJinbure(s, clan, { policy: stance === '攻勢' ? 'attack' : 'defend', camps: campsOf(s, clan), field: clanArmies(s, clan).filter((a) => !a.ikki && a.front === undefined), targetHexes: C.target ? clanCastles(s, C.target).map((k) => k.hex) : [] }); }
+  { const C = s.clans[clan];
+    // 攻勢に転じた月を覚え、しばらく様子を見てから攻めの陣触を出す（ゲームの始まりの数か月も平時のまま）
+    if (stance === '攻勢') C.offensiveSince ??= s.turn; else C.offensiveSince = undefined;
+    const ready = stance === '攻勢' && s.turn - (C.offensiveSince ?? s.turn) >= AUTO.WAIT && s.turn > AUTO.GRACE;
+    autoJinbure(s, clan, { policy: ready ? 'attack' : 'defend', camps: campsOf(s, clan), field: clanArmies(s, clan).filter((a) => !a.ikki && a.front === undefined), targetHexes: C.target ? clanCastles(s, C.target).map((k) => k.hex) : [] }); }
   const armies = clanArmies(s, clan).filter((a) => !a.ikki).sort((x, y) => y.troops - x.troops);
   const d = R.DIFFICULTY[s.difficulty];
   aiIkki(s, clan);

@@ -105,6 +105,7 @@ export interface Clan {
   id: string; name: string; color: string; leader: string | null;
   foreign?: boolean; // 国外の家（朝鮮・明）。唐入りまで alive=false のまま眠る
   prestige: number; food: number; alive: boolean; stance: '攻勢' | '均衡' | '守勢';
+  offensiveSince?: number; // AI: 攻勢に転じたターン（しばらく様子を見てから陣触を出す）
   target: string | null; // AIの主攻勢力
   lastWar?: number; // 最後に攻撃したターン
   wonTurn?: number; foughtTurn?: number; // 使番の功績判定用

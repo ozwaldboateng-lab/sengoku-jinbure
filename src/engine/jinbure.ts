@@ -5,7 +5,7 @@ import { membersOf, staffOf, treeOf, attachAuto, levelOf } from './corps';
 import { HEXES, NEIGHBORS, graphDistances, hexDist, isForeignHex } from './map';
 import { nearestOwnCastle } from './ops';
 import * as R from './rules';
-import { addLog, allied, hostile, castleAt, clanCastles, clanName, drillOf, initialMorale, maxTroops, occupancy } from './state';
+import { addLog, allied, hostile, hexOwner, castleAt, clanCastles, clanName, drillOf, initialMorale, maxTroops, occupancy } from './state';
 import { TRAITS } from '../data/traits';
 import { ninjaHead } from './traits';
 import type { Army, Castle, GameState, General } from './types';
@@ -213,12 +213,13 @@ export function campAll(s: GameState) {
 // ───────── 自動の陣触・陣払い（AIの家、領、軍事の委任） ─────────
 // 攻め: 狙う城の近く（JB.FRONT マス以内）にある名簿に陣触。守り: 敵の軍勢が迫った城の名簿に急ぎの陣触、聞こえた陣触が近ければ陣触
 // 平時: 敵が近くになく、狙う城からも遠く、しばらく戦のない軍団は陣払い（兵糧が浮く）
-export const AUTO = { FRONT: 6, THREAT: 3, NEWS_NEAR: 5, IDLE: 3, CALM: 4, ATTACK_PER_MONTH: 2 };
+export const AUTO = { FRONT: 6, THREAT: 3, NEWS_NEAR: 5, IDLE: 3, CALM: 4, ATTACK_PER_MONTH: 1, WAIT: 3, GRACE: 4 }; // WAIT: AIは攻勢に転じてからこの月数は様子を見る。GRACE: ゲームの始まりからこの月数はAIの攻めの陣触なし
 export interface AutoOpts { policy: 'attack' | 'defend' | 'build'; camps: Army[]; field: Army[]; targetHexes: number[] }
 export function autoJinbure(s: GameState, clan: string, o: AutoOpts) {
   const C = s.clans[clan];
   if (!C?.alive || C.foreign) return;
-  const hostileArmies = Object.values(s.armies).filter((x) => x.clan !== clan && !x.routed && hostile(s, clan, x.clan));
+  // 迫る敵: 敵の軍勢のうち、自分の領の外にいる（攻めてきている）ものか、この家を狙う家のもの。自分の領で構えているだけの隣の家の軍勢には反応しない（陣触の連鎖を防ぐ）
+  const hostileArmies = Object.values(s.armies).filter((x) => x.clan !== clan && !x.routed && hostile(s, clan, x.clan) && (x.ikki || hexOwner(s, x.hex) !== x.clan || s.clans[x.clan]?.target === clan));
   const near = (hex: number, r: number) => hostileArmies.filter((x) => hexDist(x.hex, hex) <= r).reduce((t, x) => t + x.troops, 0);
   const tgt = o.targetHexes.length ? graphDistances(o.targetHexes) : null;
   // 聞こえた陣触のうち、この家を狙う家のものだけに備える（ほかの家どうしの陣触にまで応じると、陣触が連鎖してしまう）

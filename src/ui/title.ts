@@ -75,6 +75,7 @@ export function openTitleScreen(d: TitleDeps) {
 export const titleOpen = () => !$('title').hidden;
 export function closeTitleScreen() { $('title').hidden = true; }
 
+let openAnim = 0; // 序幕の地図のアニメーションの番号
 function setPreview() {
   preview = scen === S1592.id ? newKarairiGame('normal', 1) : newGame('oda', 'normal', 1, scen);
   if (scen === S1592.id) pick = 'hashiba';
@@ -253,8 +254,9 @@ function applyBeat(instant: boolean) {
   v.invalidate();
   if (instant || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   Object.assign(v, from);
-  const t0 = performance.now(), D = 700;
+  const t0 = performance.now(), D = 700, my = ++openAnim;
   const step = () => {
+    if (my !== openAnim || screen !== 'opening') return; // 次の一枚へ進んだか序幕を閉じたあとの一コマは何もしない
     const k = Math.min(1, (performance.now() - t0) / D), e = 1 - Math.pow(1 - k, 3);
     v.scale = from.scale + (to.scale - from.scale) * e; v.ox = from.ox + (to.ox - from.ox) * e; v.oy = from.oy + (to.oy - from.oy) * e;
     v.redraw();
