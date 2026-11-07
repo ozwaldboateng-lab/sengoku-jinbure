@@ -157,7 +157,8 @@ export function captureCastle(s: GameState, c: Castle, clan: string) {
 export function checkVictory(s: GameState) {
   if (s.over) return;
   if (!clanCastles(s, s.player).length) s.over = 'lose';
-  else if (!s.karairi?.active && s.castles.every((c) => isForeignHex(c.hex) || c.owner === s.player)) s.over = 'win'; // 国外の城は数えない。唐入りのあいだは天下統一の判定をしない
+  else if (!s.karairi?.active && (s.castles.every((c) => isForeignHex(c.hex) || c.owner === s.player)
+    || !Object.values(s.clans).some((C) => C.id !== s.player && C.alive && !C.foreign))) s.over = 'win'; // 全城を持つか、国内に他の家が残っていなければ天下統一（国人衆の城が残っていてもよい）。国外の城は数えない。唐入りのあいだは判定しない
 }
 
 // 登用成功率（SPEC: clamp(0.4 + (登用側主将魅力 − 旧主家威信)/100, 0, 1)）

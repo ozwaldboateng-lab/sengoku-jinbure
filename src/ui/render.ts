@@ -372,10 +372,9 @@ export class MapView {
       if (hl && !lit) base = mix(rgbToHex(base), '#1a130d', 0.5);
       else if (this.highlight) base = mix(rgbToHex(base), '#fff3d0', 0.15);
       const tf = h.t === 'M' ? 0.86 : h.t === 'F' ? 0.93 : 1;
-      // 険山: 雪と岩の色に、勢力の色をうっすら
-      ctx.fillStyle = isBlocked(h.i) ? mix('#d9d5ca', rgbToHex(base), 0.28) : tf === 1 ? base : shade(rgbToHex(base), tf);
+      ctx.fillStyle = tf === 1 ? base : shade(rgbToHex(base), tf); // 険山も塗りは山と同じ
       this.hexPath(ctx, h.i, HEX_SIZE + 0.25);
-      if (under) ctx.globalAlpha = isBlocked(h.i) ? Math.min(1, this.hexAlpha! + 0.3) : this.hexAlpha!;
+      if (under) ctx.globalAlpha = this.hexAlpha!;
       ctx.fill();
       ctx.globalAlpha = 1;
     }

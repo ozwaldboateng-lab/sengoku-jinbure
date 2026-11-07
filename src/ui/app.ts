@@ -1835,7 +1835,7 @@ const TABS: Record<string, (st: GameState) => string> = {
         <td class="dip-cell">${mine ? '' : x.foreign ? '<span class="pill warn">国外・唐入りの敵</span>' : `${dipButton(st, 'alliance', x.id)}${dipButton(st, 'marriage', x.id)}${dipButton(st, 'surrender', x.id)}${(() => { const t = treatyOf(st, st.player, x.id); return t ? `<button class="mini" data-act="dip-break" data-id="${x.id}" title="同盟・婚姻を破る（威信−${t.kind === 'marriage' ? DIP.BREAK_MARRIAGE : DIP.BREAK_ALLIANCE}）">手切れ</button>` : ''; })()}`}</td></tr>`;
     };
     const shown = dipAll ? others : others.filter((x) => near.has(x.id) || treatyOf(st, st.player, x.id));
-    return `<p class="lede" style="margin-top:0">存続 ${others.length + 1}家。国人衆の城 ${st.castles.filter((x) => !x.owner).length}。全${domesticCount(st)}城の制圧で天下統一。同盟・婚姻・降伏勧告はこの一覧から申し入れられる（数字は成功の見込み。押せないものは押す・触れると理由が出る）。家の名を押すと、その家の詳しい様子が開く。</p>
+    return `<p class="lede" style="margin-top:0">存続 ${others.length + 1}家。国人衆の城 ${st.castles.filter((x) => !x.owner).length}。全${domesticCount(st)}城の制圧か、ほかの家がすべて滅べば天下統一（国人衆の城は残っていてよい）。同盟・婚姻・降伏勧告はこの一覧から申し入れられる（数字は成功の見込み。押せないものは押す・触れると理由が出る）。家の名を押すと、その家の詳しい様子が開く。</p>
     <div class="picker" style="margin:0 0 10px"><label for="sel-gift">名物を添える（成功率＋格×${R.ITEM_GIFT * 100}%。応じれば相手の家へ渡る。断られれば手元に残る）</label>
       <select id="sel-gift"><option value="">添えない</option>${clanItems(st, st.player).map((it) => `<option value="${it.id}" ${dipGift === it.id ? 'selected' : ''}>${esc(itemLabel(it))}　+${Math.round(it.grade * R.ITEM_GIFT * 100)}%${it.holder ? `（${esc(st.generals[it.holder].name)}が所持）` : ''}</option>`).join('')}</select></div>
     <div class="subtabs" role="group" aria-label="表示する家"><button type="button" data-act="dip-filter" data-id="near" aria-selected="${!dipAll}">近隣と盟友（${others.filter((x) => near.has(x.id) || treatyOf(st, st.player, x.id)).length}）</button><button type="button" data-act="dip-filter" data-id="all" aria-selected="${dipAll}">すべての家（${others.length}）</button></div>
@@ -1851,7 +1851,7 @@ const TABS: Record<string, (st: GameState) => string> = {
   },
   clans: (st) => {
     const rows = Object.values(st.clans).filter((c) => c.alive).sort((a, b) => clanKoku(st, b.id) - clanKoku(st, a.id));
-    return `<p class="lede">存続 ${rows.length}家。国人衆の城 ${st.castles.filter((c) => !c.owner).length}。全${domesticCount(st)}城の制圧で天下統一。</p>
+    return `<p class="lede">存続 ${rows.length}家。国人衆の城 ${st.castles.filter((c) => !c.owner).length}。全${domesticCount(st)}城の制圧か、ほかの家がすべて滅べば天下統一（国人衆の城は残っていてよい）。</p>
     <div class="tbl-wrap"><table><thead><tr><th>勢力</th><th>当主</th><th class="n">城</th><th class="n">石高</th><th class="n">兵</th><th class="n">威信</th><th>官位</th><th>方針</th><th>主攻</th><th>関係</th></tr></thead><tbody>
     ${rows.map((c) => `<tr${c.id === st.player ? ' class="me"' : ''}><td><span class="swatch" style="background:${c.color}"></span> ${esc(c.name)}</td><td>${c.leader ? nameLink(st.generals[c.leader]) : '—'}</td><td class="n">${clanCastles(st, c.id).length}</td><td class="n">${clanKoku(st, c.id).toFixed(1)}</td><td class="n">${fmt(clanTroops(st, c.id))}</td><td class="n">${c.prestige}</td><td>${courtOf(st, c.id) ? esc(courtName(st, c.id)) : '—'}</td><td>${c.id === st.player ? '—' : c.stance}</td><td>${c.id === st.player || !c.target ? '—' : esc(clanName(st, c.target))}</td><td>${c.id === st.player ? '—' : relationLabel(st, c.id)}</td></tr>`).join('')}
     </tbody></table></div>`;
