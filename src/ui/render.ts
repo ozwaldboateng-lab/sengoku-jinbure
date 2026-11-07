@@ -18,6 +18,11 @@ const FOREIGN_FILL = '#5f666c';
 const isSealedClan = (s: GameState, id: string | null) => !!id && !!s.clans[id]?.foreign && !s.clans[id].alive;
 const isSealed = (s: GameState, h: number) => isForeignHex(h) && isSealedClan(s, hexOwner(s, h));
 const CENTERS = HEXES.map((h) => hexCenter(h.i));
+// 見られる範囲: 日本と朝鮮・遼東のヘックスの外側を少しだけ。その外の大陸は描かない
+const BOUNDS = (() => {
+  const xs = CENTERS.map((c) => c[0]), ys = CENTERS.map((c) => c[1]), m = HEX_SIZE * 4;
+  return { x0: Math.min(...xs) - m, y0: Math.min(...ys) - m, x1: Math.max(...xs) + m, y1: Math.max(...ys) + m };
+})();
 // 国外の家ごとの真ん中（名を置く所）
 const FOREIGN_CENTER: Record<string, [number, number]> = (() => {
   const acc: Record<string, [number, number, number]> = {};
@@ -174,8 +179,19 @@ export class MapView {
     this.redraw();
   }
 
+  // 地図の外へ出ないように。全体が画面に収まる倍率より小さくはしない
+  private minScale() { return Math.min(this.w / (BOUNDS.x1 - BOUNDS.x0), this.h / (BOUNDS.y1 - BOUNDS.y0)); }
+  private clampView() {
+    if (!this.w || !this.h) return;
+    const ms = this.minScale();
+    if (this.scale < ms) this.scale = ms;
+    const bw = (BOUNDS.x1 - BOUNDS.x0) * this.scale, bh = (BOUNDS.y1 - BOUNDS.y0) * this.scale;
+    this.ox = bw <= this.w ? (this.w - bw) / 2 - BOUNDS.x0 * this.scale : Math.min(-BOUNDS.x0 * this.scale, Math.max(this.w - BOUNDS.x1 * this.scale, this.ox));
+    this.oy = bh <= this.h ? (this.h - bh) / 2 - BOUNDS.y0 * this.scale : Math.min(-BOUNDS.y0 * this.scale, Math.max(this.h - BOUNDS.y1 * this.scale, this.oy));
+  }
+
   zoomAt(px: number, py: number, f: number) {
-    const ns = Math.max(0.35, Math.min(5, this.scale * f));
+    const ns = Math.max(this.w ? Math.max(0.35, this.minScale()) : 0.35, Math.min(5, this.scale * f));
     const k = ns / this.scale;
     this.ox = px - (px - this.ox) * k;
     this.oy = py - (py - this.oy) * k;
@@ -340,6 +356,7 @@ export class MapView {
     ctx.fillStyle = this.seaPattern ?? C.sea;
     ctx.fillRect(0, 0, this.w, this.h);
     if (!s) return;
+    this.clampView();
     ctx.setTransform(this.dpr * this.scale, 0, 0, this.dpr * this.scale, this.dpr * this.ox, this.dpr * this.oy);
     const px = 1 / this.scale; // 1画面pxの世界長
     const viewMinX = -this.ox / this.scale - HEX_SIZE * 2, viewMaxX = (this.w - this.ox) / this.scale + HEX_SIZE * 2;
@@ -350,12 +367,14 @@ export class MapView {
     if (under) {
       // 下絵: 本物の陸（よその陸は暗く）と海岸線。ヘックスはこの上に半透明で重ねる
       const B = base();
+      ctx.save(); ctx.beginPath(); ctx.rect(BOUNDS.x0, BOUNDS.y0, BOUNDS.x1 - BOUNDS.x0, BOUNDS.y1 - BOUNDS.y0); ctx.clip(); // 範囲の外の大陸は描かない
       ctx.fillStyle = 'rgba(0,0,0,0.4)';
       ctx.save(); ctx.translate(2.2, 2.6); ctx.fill(B.jp, 'evenodd'); ctx.fill(B.other, 'evenodd'); ctx.restore();
       ctx.fillStyle = '#7d7460'; ctx.fill(B.other, 'evenodd');
       ctx.fillStyle = '#d8c9a4'; ctx.fill(B.jp, 'evenodd');
       ctx.lineJoin = 'round';
       ctx.strokeStyle = 'rgba(40,28,15,0.75)'; ctx.lineWidth = 1.3 * px; ctx.stroke(B.jp); ctx.stroke(B.other);
+      ctx.restore();
     } else {
       // 陸地の影
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -383,9 +402,11 @@ export class MapView {
     if (under) {
       // 湖と川はヘックスの上に（地形の川のヘックスと同じ線）
       const B = base();
+      ctx.save(); ctx.beginPath(); ctx.rect(BOUNDS.x0, BOUNDS.y0, BOUNDS.x1 - BOUNDS.x0, BOUNDS.y1 - BOUNDS.y0); ctx.clip();
       ctx.fillStyle = 'rgba(52,86,110,0.92)'; ctx.fill(B.lakes);
       ctx.strokeStyle = 'rgba(30,24,16,0.6)'; ctx.lineWidth = 1 * px; ctx.stroke(B.lakes);
       ctx.strokeStyle = 'rgba(62,118,160,0.85)'; ctx.lineWidth = Math.max(2.2 * px, HEX_SIZE * 0.09); ctx.stroke(B.rivers);
+      ctx.restore();
     }
 
     // 国境・勢力境界・海岸線
