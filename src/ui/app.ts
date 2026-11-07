@@ -1,7 +1,8 @@
 // 画面の組み立てと操作
 import { defenderSupports, estimate, supportArmies } from '../engine/combat';
 import { endTurn } from '../engine/game';
-import { HEXES, PROVINCES, NEIGHBORS, TERRAIN_NAME, hexCenter, hexDist, isForeignHex } from '../engine/map';
+import { HEXES, PROVINCES, NEIGHBORS, TERRAIN_NAME, hexCenter, hexDist, isForeignHex, rangeName } from '../engine/map';
+import { PASSES } from '../data/ranges';
 import { attackTargets, pathTo, reachable, type Target } from '../engine/move';
 import { canPlot, capital, checkVictory, doPlot, naioActive, plotChance, disband, execute, moveArmy, recruit, recruitChance, recruitRonin, release, roninChance } from '../engine/ops';
 import * as R from '../engine/rules';
@@ -327,7 +328,7 @@ function renderLegend() {
   el.dataset.mode = view.mode;
   const st = s;
   if (view.mode === 'power' || !st) {
-    el.innerHTML = '<span><i class="lg lg-p"></i>平地</span><span><i class="lg lg-f"></i>森 守×1.15</span><span><i class="lg lg-m"></i>山 守×1.3</span><span><i class="lg lg-r"></i>川 攻×0.85</span><span><i class="lg lg-c"></i>城 守×1.2〜2.2</span>';
+    el.innerHTML = '<span><i class="lg lg-p"></i>平地</span><span><i class="lg lg-f"></i>森 守×1.15</span><span><i class="lg lg-m"></i>山 守×1.3</span><span><i class="lg lg-r"></i>川 攻×0.85</span><span><i class="lg lg-x"></i>険山 通れず</span><span><i class="lg lg-c"></i>城 守×1.2〜2.2</span>';
     return;
   }
   if (view.mode === 'meibun') el.innerHTML = sw(MB.own, '自家') + sw(MB.ally, '盟友') + sw(MB.ok, '名分あり') + sw(MB.no, '私戦になる') + sw(MB.kokujin, '国人（問わない）');
@@ -694,9 +695,14 @@ function hexPanel(i: number) {
   if (isForeignHex(i) && !st.clans[owner ?? '']?.alive) return `<div class="ph"><div><h2>${esc(PROVINCES[h.p].name)}</h2><div class="sub">国外（${esc(clanName(st, owner))}）　${esc(dc.name)}の辺り</div></div></div>
   <dl class="kv"><dt>地形</dt><dd>${esc(TERRAIN_NAME[h.t])}</dd></dl>
   <p class="hint">海の向こうの国。ここへは攻め入れない。天下を統一したのちの唐入りで、対馬から船で渡れるようになる。</p>`;
-  return `<div class="ph"><div><h2>${esc(PROVINCES[h.p].name)}</h2><div class="sub">${esc(clanName(st, owner))}${owner ? '家' : ''}領　${esc(dc.name)}の支配域</div></div></div>
+  const rn = rangeName(i);
+  if (rn) return `<div class="ph"><div><h2>${esc(rn)}</h2><div class="sub">${esc(PROVINCES[h.p].name)}　${esc(clanName(st, owner))}${owner ? '家' : ''}領</div></div></div>
+  <dl class="kv"><dt>地形</dt><dd>険山</dd><dt>石高</dt><dd>${man(h.k * dc.dev)}</dd><dt>移動</dt><dd>不可</dd></dl>
+  <p class="hint">険しい山並みで、軍勢は越えられない。峠や川筋を回って進む。</p>`;
+  const pass = PASSES[i];
+  return `<div class="ph"><div><h2>${esc(PROVINCES[h.p].name)}${pass ? `　<small>${esc(pass)}</small>` : ''}</h2><div class="sub">${esc(clanName(st, owner))}${owner ? '家' : ''}領　${esc(dc.name)}の支配域</div></div></div>
   <dl class="kv"><dt>地形</dt><dd>${terrainLabel(i)}</dd><dt>石高</dt><dd>${man(h.k * dc.dev)}</dd><dt>移動</dt><dd>${R.MOVE_COST[h.t]}</dd></dl>
-  <p class="hint">防御倍率は守備側が受ける損害を割る。山から平地・森・川への攻撃は高地補正 ×${R.HIGH_GROUND}。</p>`;
+  <p class="hint">${pass ? `山並みを抜ける通り道。軍勢はここを通って国を越える。` : ''}防御倍率は守備側が受ける損害を割る。山から平地・森・川への攻撃は高地補正 ×${R.HIGH_GROUND}。</p>`;
 }
 
 function verdict(e: number) {

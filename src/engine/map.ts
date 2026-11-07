@@ -1,6 +1,7 @@
 // 静的マップ（生成済み JSON）と隣接計算
 import raw from '../data/map.json';
 import type { Hex } from './types';
+import { RANGES } from '../data/ranges';
 
 interface RawMap {
   size: number;
@@ -38,6 +39,14 @@ for (const [a, b] of LINKS) {
   linkSet.add(`${a},${b}`); linkSet.add(`${b},${a}`);
 }
 export const isLink = (a: number, b: number) => linkSet.has(`${a},${b}`);
+
+// 険山: 軍勢は入れない。隣の表から外す（中から出る道だけは残す。古い保存で中にいた部隊のため）
+const rangeOf = new Map<number, string>();
+for (const g of RANGES) for (const h of g.hexes) rangeOf.set(h, g.name);
+export const isBlocked = (h: number) => rangeOf.has(h);
+export const rangeName = (h: number) => rangeOf.get(h);
+export const isSoloPeak = (h: number) => RANGES.some((g) => g.solo && g.hexes.includes(h));
+for (let i = 0; i < NEIGHBORS.length; i++) NEIGHBORS[i] = NEIGHBORS[i].filter((j) => !rangeOf.has(j));
 
 export const hexDist = (a: number, b: number) => {
   const A = HEXES[a], B = HEXES[b];

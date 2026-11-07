@@ -3,7 +3,8 @@ import { MINES, MINE_KIND_NAME } from '../data/economy';
 import { BASE_LAKES, BASE_LAND, BASE_RIVERS } from '../data/basemap';
 import { bk, meibun } from '../engine/bakufu';
 import { supplyNet } from '../engine/supply';
-import { CASTLE_DEFS, CROSSINGS, HEXES, HEX_SIZE, PROVINCES, hexCenter, isForeignHex } from '../engine/map';
+import { CASTLE_DEFS, CROSSINGS, HEXES, HEX_SIZE, PROVINCES, hexCenter, isBlocked, isForeignHex, isSoloPeak } from '../engine/map';
+import { PASSES, RANGES } from '../data/ranges';
 import type { Reach, Target } from '../engine/move';
 import { allied, castleAt, castleKoku, hexOwner } from '../engine/state';
 import type { GameState } from '../engine/types';
@@ -371,14 +372,15 @@ export class MapView {
       if (hl && !lit) base = mix(rgbToHex(base), '#1a130d', 0.5);
       else if (this.highlight) base = mix(rgbToHex(base), '#fff3d0', 0.15);
       const tf = h.t === 'M' ? 0.86 : h.t === 'F' ? 0.93 : 1;
-      ctx.fillStyle = tf === 1 ? base : shade(rgbToHex(base), tf);
+      // 険山: 雪と岩の色に、勢力の色をうっすら
+      ctx.fillStyle = isBlocked(h.i) ? mix('#d9d5ca', rgbToHex(base), 0.28) : tf === 1 ? base : shade(rgbToHex(base), tf);
       this.hexPath(ctx, h.i, HEX_SIZE + 0.25);
-      if (under) ctx.globalAlpha = this.hexAlpha!;
+      if (under) ctx.globalAlpha = isBlocked(h.i) ? Math.min(1, this.hexAlpha! + 0.3) : this.hexAlpha!;
       ctx.fill();
       ctx.globalAlpha = 1;
     }
     ctx.lineCap = 'round';
-    for (const h of visible) if (!(under && h.t === 'R')) this.drawTerrain(ctx, h.i, h.t);
+    for (const h of visible) if (!(under && h.t === 'R')) this.drawTerrain(ctx, h.i, isSoloPeak(h.i) ? 'Y' : isBlocked(h.i) ? 'X' : h.t);
     if (under) {
       // 湖と川はヘックスの上に（地形の川のヘックスと同じ線）
       const B = base();
@@ -537,6 +539,30 @@ export class MapView {
       }
       this.redraw(); // 動かし続ける
     }
+    // 山脈の名と峠の札（寄ったときだけ）
+    if (this.scale > 1.1) {
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const fs = Math.max(10, Math.min(14, 12 * Math.sqrt(this.scale / 1.6))) * px;
+      for (const g of RANGES) {
+        const xs = g.hexes.map((h) => CENTERS[h]);
+        const x = xs.reduce((t, p) => t + p[0], 0) / xs.length, y = xs.reduce((t, p) => t + p[1], 0) / xs.length;
+        if (x < viewMinX || x > viewMaxX || y < viewMinY || y > viewMaxY) continue;
+        ctx.font = `italic 700 ${fs}px ${FONT}`; ctx.lineWidth = 3 * px; ctx.strokeStyle = 'rgba(245,242,232,0.9)'; const ly = y + HEX_SIZE * (g.solo ? 0.86 : 0.62);
+        ctx.strokeText(g.name, x, ly);
+        ctx.fillStyle = '#4a3a2a'; ctx.fillText(g.name, x, ly);
+      }
+      if (this.scale > 1.5) {
+        ctx.font = `600 ${fs * 0.82}px ${FONT}`;
+        for (const [k, name] of Object.entries(PASSES)) {
+          const [x, y] = CENTERS[+k];
+          if (x < viewMinX || x > viewMaxX || y < viewMinY || y > viewMaxY) continue;
+          const ty = s.castles.some((c) => c.hex === +k) ? y - HEX_SIZE * 0.66 : y + HEX_SIZE * 0.12, w = ctx.measureText(name).width + 6 * px, hh = fs * 1.05;
+          ctx.fillStyle = 'rgba(38,28,18,0.78)'; ctx.fillRect(x - w / 2, ty - hh / 2, w, hh);
+          ctx.strokeStyle = 'rgba(214,180,100,0.9)'; ctx.lineWidth = 0.8 * px; ctx.strokeRect(x - w / 2, ty - hh / 2, w, hh);
+          ctx.fillStyle = '#f0d68c'; ctx.fillText(name, x, ty + px);
+        }
+      }
+    }
     // 唐入り: 渡海の路（対馬〜釜山）を点線で
     if (s.karairi?.active) {
       for (const [ha, hb, name] of CROSSINGS) {
@@ -571,7 +597,38 @@ export class MapView {
   private drawTerrain(ctx: CanvasRenderingContext2D, i: number, t: string) {
     const [cx, cy] = CENTERS[i];
     const S = HEX_SIZE;
-    if (t === 'M') {
+    if (t === 'Y') {
+      // 富士山: 独りの大きな峰。裾を広げた円錐に、筋の入った雪の頂
+      const top = cy - S * 0.62, base = cy + S * 0.6, w = S * 1.1;
+      const g = ctx.createLinearGradient(cx - w, 0, cx + w, 0);
+      g.addColorStop(0, '#5a6b84'); g.addColorStop(0.55, '#46566e'); g.addColorStop(1, '#2f3b4e');
+      ctx.fillStyle = g; ctx.strokeStyle = 'rgba(25,22,30,0.85)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx - w, base);
+      ctx.quadraticCurveTo(cx - w * 0.35, base - S * 0.12, cx - w * 0.16, top + S * 0.04);
+      ctx.lineTo(cx + w * 0.16, top + S * 0.04);
+      ctx.quadraticCurveTo(cx + w * 0.35, base - S * 0.12, cx + w, base);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fbf9f2';
+      const sy = top + S * 0.42;
+      ctx.beginPath(); ctx.moveTo(cx - w * 0.16, top + S * 0.04); ctx.lineTo(cx + w * 0.16, top + S * 0.04);
+      ctx.quadraticCurveTo(cx + w * 0.26, top + S * 0.3, cx + w * 0.36, sy);
+      for (let k = 0; k < 6; k++) { const x0 = cx + w * (0.36 - (k + 0.5) * 0.12), x1 = cx + w * (0.36 - (k + 1) * 0.12); ctx.lineTo(x0, sy - S * (k % 2 ? 0.05 : 0.16)); ctx.lineTo(x1, sy); }
+      ctx.quadraticCurveTo(cx - w * 0.26, top + S * 0.3, cx - w * 0.16, top + S * 0.04);
+      ctx.closePath(); ctx.fill();
+    } else if (t === 'X') {
+      // 険山: 塗りつぶした大きな峰に雪の頂
+      for (const [dx, dy, sz] of [[-0.42, 0.2, 0.36], [0.36, 0.24, 0.32], [0, -0.05, 0.5]]) {
+        const x = cx + dx * S, y = cy + dy * S, w = sz * S, top = y - w * 0.85, base = y + w * 0.5;
+        ctx.fillStyle = '#6f6253'; ctx.strokeStyle = 'rgba(40,28,18,0.8)'; ctx.lineWidth = 0.9;
+        ctx.beginPath(); ctx.moveTo(x - w, base); ctx.lineTo(x, top); ctx.lineTo(x + w, base); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = 'rgba(80,66,52,0.55)'; // 影の側
+        ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x + w, base); ctx.lineTo(x + w * 0.15, base); ctx.closePath(); ctx.fill();
+        const k = 0.38; // 雪
+        ctx.fillStyle = '#f7f4ec';
+        ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x + w * k, top + (base - top) * k); ctx.lineTo(x + w * 0.12, top + (base - top) * 0.3);
+        ctx.lineTo(x - w * 0.1, top + (base - top) * 0.42); ctx.lineTo(x - w * k, top + (base - top) * k); ctx.closePath(); ctx.fill();
+      }
+    } else if (t === 'M') {
       ctx.strokeStyle = 'rgba(60,40,20,0.45)'; ctx.lineWidth = 1.3;
       for (const [dx, dy, sz] of [[-0.35, 0.15, 0.34], [0.18, -0.1, 0.42], [0.42, 0.3, 0.26]]) {
         const x = cx + dx * S, y = cy + dy * S, w = sz * S;
